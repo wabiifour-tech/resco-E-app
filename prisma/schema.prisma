@@ -34,6 +34,7 @@ model Teacher {
   userId          String              @unique
   user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments    TeacherAssignment[]
+  classTeachers   ClassTeacher[]
   results         Result[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
@@ -48,6 +49,8 @@ model Class {
   level      Int                 @default(0)
   category   String?             // Early Years | Nursery | Primary | Junior Secondary | Senior Secondary
   students   Student[]
+  classTeachers ClassTeacher[]
+  classSubjects ClassSubject[]
   assignments TeacherAssignment[]
   results    Result[]
   createdAt  DateTime            @default(now())
@@ -55,17 +58,56 @@ model Class {
 }
 
 // ─── Subjects ───────────────────────────────────────────────────────────────
+// The subject LIBRARY is a broad, configurable list covering all levels
+// (early years, primary, junior & senior secondary). The principal chooses
+// which subjects each class actually offers via ClassSubject. Subjects are
+// never auto-assigned to every class.
 model Subject {
-  id        String              @id @default(cuid())
-  name      String              @unique
-  code      String?
+  id         String              @id @default(cuid())
+  name       String              @unique
+  code       String?
+  active     Boolean             @default(true)
+  classSubjects ClassSubject[]
   assignments TeacherAssignment[]
-  results   Result[]
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
+  results    Result[]
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+}
+
+// ─── Class → Subjects offered (curriculum configuration) ────────────────────
+// A class offers a subject iff a ClassSubject row exists for (classId, subjectId).
+// The principal configures this per class. Result entry requires the subject
+// be offered for the student's class.
+model ClassSubject {
+  id        String   @id @default(cuid())
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([classId, subjectId])
+}
+
+// ─── Class-teacher responsibility (distinct from subject teaching) ─────────
+// A teacher may be the CLASS TEACHER of a class (form tutor / homeroom)
+// independent of which subjects they teach. A teacher can be class teacher
+// of a class AND teach subjects there, or only be class teacher, or only
+// teach subjects.
+model ClassTeacher {
+  id        String   @id @default(cuid())
+  teacherId String
+  teacher   Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([teacherId, classId])
 }
 
 // ─── Teacher → Class + Subject assignment ───────────────────────────────────
+// One row per (Teacher, Class, Subject) subject-teaching responsibility.
+// A teacher may have MANY such rows across multiple classes and subjects.
 model TeacherAssignment {
   id         String   @id @default(cuid())
   teacherId  String

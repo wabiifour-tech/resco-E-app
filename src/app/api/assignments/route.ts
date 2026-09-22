@@ -30,18 +30,29 @@ export async function GET() {
   if (!u) return Response.json({ error: 'Authentication required' }, { status: 401 })
 
   if (u.role === 'PRINCIPAL') {
-    const assignments = await db.teacherAssignment.findMany({
-      include: {
-        teacher: { include: { user: { select: { name: true, email: true } } } },
-        class: { select: { id: true, name: true, level: true } },
-        subject: { select: { id: true, name: true, code: true } },
-      },
-      orderBy: [
-        { class: { level: 'asc' } },
-        { class: { name: 'asc' } },
-        { subject: { name: 'asc' } },
-      ],
-    })
+    const [assignments, classTeachers] = await Promise.all([
+      db.teacherAssignment.findMany({
+        include: {
+          teacher: { include: { user: { select: { name: true, email: true } } } },
+          class: { select: { id: true, name: true, level: true } },
+          subject: { select: { id: true, name: true, code: true } },
+        },
+        orderBy: [
+          { teacher: { user: { name: 'asc' } } },
+          { class: { level: 'asc' } },
+          { subject: { name: 'asc' } },
+        ],
+      }),
+      db.classTeacher.findMany({
+        include: {
+          teacher: { include: { user: { select: { name: true, email: true } } } },
+          class: { select: { id: true, name: true, level: true } },
+        },
+        orderBy: [{ class: { level: 'asc' } }, { teacher: { user: { name: 'asc' } } }],
+      }),
+    ])
+    // Set of "teacherId|classId" that are class-teacher pairs
+    const ctKeys = new Set(classTeachers.map((ct) => `${ct.teacherId}|${ct.classId}`))
     return Response.json({
       assignments: assignments.map((a) => ({
         id: a.id,
@@ -51,31 +62,62 @@ export async function GET() {
         classId: a.classId,
         className: a.class.name,
         classLevel: a.class.level,
+        isClassTeacher: ctKeys.has(`${a.teacherId}|${a.classId}`),
         subjectId: a.subjectId,
         subjectName: a.subject.name,
         subjectCode: a.subject.code,
         createdAt: a.createdAt,
       })),
+      classTeachers: classTeachers.map((ct) => ({
+        id: ct.id,
+        teacherId: ct.teacherId,
+        teacherName: ct.teacher.user.name,
+        teacherEmail: ct.teacher.user.email,
+        classId: ct.classId,
+        className: ct.class.name,
+        classLevel: ct.class.level,
+        createdAt: ct.createdAt,
+      })),
     })
   }
 
   // Teacher — return only their own assignments (teacher-facing shape)
-  if (!u.teacherId) return Response.json({ assignments: [] })
+  if (!u.teacherId) return Response.json({ assignments: [], classTeachers: [] })
 
-  const assignments = await db.teacherAssignment.findMany({
-    where: { teacherId: u.teacherId },
-    include: {
-      class: { select: { id: true, name: true, level: true } },
-      subject: { select: { id: true, name: true, code: true } },
-    },
-    orderBy: [
-      { class: { level: 'asc' } },
-      { class: { name: 'asc' } },
-      { subject: { name: 'asc' } },
-    ],
+  const [assignments, classTeachers] = await Promise.all([
+    db.teacherAssignment.findMany({
+      where: { teacherId: u.teacherId },
+      include: {
+        class: { select: { id: true, name: true, level: true } },
+        subject: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: [
+        { class: { level: 'asc' } },
+        { class: { name: 'asc' } },
+        { subject: { name: 'asc' } },
+      ],
+    }),
+    db.classTeacher.findMany({
+      where: { teacherId: u.teacherId },
+      include: { class: { select: { id: true, name: true, level: true, category: true } } },
+      orderBy: { class: { level: 'asc' } },
+    }),
+  ])
+
+  const ctClassIds = new Set(classTeachers.map((ct) => ct.classId))
+  return Response.json({
+    assignments: assignments.map((a) => ({
+      ...serializeForTeacher(a),
+      isClassTeacher: ctClassIds.has(a.classId),
+    })),
+    classTeachers: classTeachers.map((ct) => ({
+      id: ct.class.id,
+      name: ct.class.name,
+      level: ct.class.level,
+      category: ct.class.category,
+      classTeacherId: ct.id,
+    })),
   })
-
-  return Response.json({ assignments: assignments.map(serializeForTeacher) })
 }
 
 export async function POST(req: NextRequest) {

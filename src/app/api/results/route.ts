@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { getSession, requireTeacherAuthorized } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
+import { isSubjectOfferedForClass } from '@/lib/curriculum'
 import {
   validateScore,
   computeTotal,
@@ -299,6 +300,16 @@ export async function POST(req: NextRequest) {
     return Response.json(
       { error: 'You are not assigned to this class and subject' },
       { status: 403 },
+    )
+  }
+
+  // Curriculum guard: the subject must be offered for the class. A teacher
+  // cannot enter a result for a subject the class does not offer.
+  const offered = await isSubjectOfferedForClass(classId, subjectId)
+  if (!offered) {
+    return Response.json(
+      { error: 'This subject is not offered for the selected class' },
+      { status: 400 },
     )
   }
 

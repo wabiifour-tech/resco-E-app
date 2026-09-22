@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { getSession, requireTeacherAuthorized } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
+import { isSubjectOfferedForClass } from '@/lib/curriculum'
 import {
   validateScore,
   computeTotal,
@@ -211,6 +212,15 @@ export async function PUT(
         error: `This result is already ${existing.status}. Editing is locked until the principal reopens it.`,
       },
       { status: 409 },
+    )
+  }
+
+  // Curriculum guard: the subject must still be offered for the class.
+  const offered = await isSubjectOfferedForClass(existing.classId, existing.subjectId)
+  if (!offered) {
+    return Response.json(
+      { error: 'This subject is no longer offered for the class' },
+      { status: 400 },
     )
   }
 

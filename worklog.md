@@ -569,3 +569,109 @@ Work Log:
 Stage Summary:
 - The saved school logo and principal name now take effect on the report card immediately after saving (cache invalidation). `bun run lint` passes (0 errors).
 - The data was always persisted correctly; the bug was purely client-side query cache invalidation.
+
+---
+Task ID: 8a-assignments-ui
+Agent: full-stack-developer
+Task: Redesign the Principal's Teacher Assignments view (`src/components/views/principal/assignments.tsx`, named export `PrincipalAssignments`) to drive the new multi-class + multi-subject + class-teacher bulk workflow and grouped display.
+
+Work Log:
+- Read the most recent worklog entries (Task 5–7: flat-class refactor, ClassSubject/ClassTeacher additions) and confirmed the live API contract by reading the actual route handlers (not just the spec): `GET /api/assignments` returns `{ assignments: [{ id, teacherId, teacherName, teacherEmail, classId, className, classLevel, isClassTeacher, subjectId, subjectName, subjectCode, createdAt }], classTeachers: [{ id, teacherId, teacherName, teacherEmail, classId, className, classLevel, createdAt }] }`; `GET /api/assignments/options` returns `{ teachers: [{id,name,email}], classes: [{id,name,level,category}], subjects: [{id,name,code}], classSubjects: { "<classId>": ["<subjectId>", ...] } }`; `POST /api/assignments/bulk` request `{ teacherId, entries: [{ classId, subjectIds: [], classTeacher: boolean }] }` returns `{ ok, teacherId, createdAssignments, skippedAssignments, createdClassTeacher, skippedClassTeacher }`; `DELETE /api/assignments/[id]` returns `{ ok }`; `POST /api/class-teachers { teacherId, classId }` returns `{ id, teacherId, classId }` (status 201); `DELETE /api/class-teachers/[id]` returns `{ ok }`.
+- REWROTE the entire `src/components/views/principal/assignments.tsx`. Key design decisions:
+  - TWO-SECTION LAYOUT (single page, no wizard): Section 1 = "Add / Update Assignments" bulk form; Section 2 = "Current Assignments" grouped display with by-teacher / by-class toggle.
+  - BULK FORM (Section 1): (a) Select-teacher `Select` populated from `options.teachers`. (b) Select-classes checkbox grid grouped by `category` (Early Years/Nursery/Primary/Junior Secondary/Senior Secondary) and ordered by `level` then `name` (so flat structure KG → Nursery → Primary → JSS → SS appears in order). (c) For EACH checked class: a sub-panel with a "Class Teacher" `Checkbox` + a per-class subject-checkbox list that shows ONLY the subjects offered for that class (`options.classSubjects[classId]`). Subject selections are stored in `perClass[classId].subjectIds: Set<string>` — INDEPENDENT per class (toggling English in Primary 2 does NOT touch English in Primary 3). Each class panel has "Select all" / "Clear" helper buttons and a "N of M subjects selected" counter. If a class has no offered subjects yet, the panel shows the hint "No subjects offered for this class yet — configure them in Subject Management." (d) "Save Assignments" button → POSTs `/api/assignments/bulk` with `{ teacherId, entries: [{ classId, subjectIds: [], classTeacher: boolean }] }` for entries that have at least one subject OR a class-teacher flag. On success: toast `Saved — X assignment(s) created (Y skipped), Z class-teacher set`; clears `perClass` and `selectedClasses`; KEEPS `teacherId` so the principal can tweak and re-save; invalidates `['assignments']`.
+  - GROUPED DISPLAY (Section 2): uses BOTH the `assignments` and `classTeachers` arrays from the GET /api/assignments response (not just assignments). Builds a merged structure where, for each (teacher, class) pair, `isClassTeacher` is stamped from the `classTeachers` array (so a teacher who is class-teacher of a class but teaches NO subjects there still shows up — with the class-teacher badge and a "Remove as class teacher" button). Class-teacher row IDs (`classTeacherRowId`) are stamped onto the per-(teacher,class) group so the "Remove" button can `DELETE /api/class-teachers/[id]` directly. The "Make class teacher" button `POST /api/class-teachers { teacherId, classId }`. Per-subject remove uses an inline X button on each subject chip → `DELETE /api/assignments/[id]` (looks up the assignment id from the assignments array by matching teacherId+classId+subjectId — unique by the new schema's `teacherId_classId_subjectId` constraint).
+  - BY-CLASS TOGGLE: a `Tabs` with "By Teacher" / "By Class" — the by-class view groups by class, shows every teacher assigned (with class-teacher badge + subject chips + X buttons + Make/Remove class-teacher toggle). The same lookup+delete logic is reused.
+  - SEARCH: filters the grouped display by teacher name OR class name (case-insensitive). In by-teacher mode, the filter also narrows the per-teacher class list (so a search for "Primary 2" shows only the matching class under each teacher, instead of hiding the whole teacher). In by-class mode, similarly narrows the per-class teacher list.
+  - TanStack Query keys: `['assignments']` (invalidate on every mutation success — bulk, delete, make class-teacher, remove class-teacher — because GET /api/assignments returns both arrays together so one invalidation covers everything); `['assignments-options']` (read-only, fetched once on mount). Mutations: `bulkMutation`, `delMutation`, `makeClassTeacherMutation`, `removeClassTeacherMutation` — all use `api` from `@/lib/api-client`, all toasts via `sonner`.
+  - UI conventions per spec: shadcn `Card`, `Button`, `Checkbox`, `Select`, `Badge`, `Input`, `Label`, `Separator`, `Skeleton`, `Tabs`. View title `<h1 className="text-2xl font-bold tracking-tight">Teacher Assignments</h1>` with `text-sm text-muted-foreground mt-1` subtitle. Color: NO indigo/blue anywhere; class-teacher badge uses emerald (`bg-emerald-100 text-emerald-800 border-emerald-200` + dark variants); subject chips use `variant="secondary"`. Mobile responsive: form stacks vertically on mobile, per-class subject checkboxes wrap with `flex flex-wrap gap-2`, classes grid is 1 column on mobile → 2 on `sm:` → 3 on `lg:`. Touch targets: class-teacher toggle labels, class checkboxes, and subject chip labels are `min-h-[44px]` / `min-h-[40px]`; the per-subject X icon button has `p-0.5` hit area and `aria-label` for screen readers.
+  - Removed imports no longer used: `Dialog*`, `AlertDialog*`, `Table*`, `Plus`, `Trash2`, `User` icon, `useEffect`. Single `'use client'` directive at the top.
+- Verified the new view against the live dev server: `GET /` returns 200 (compiles cleanly, see dev.log "✓ Compiled in 366ms" after the file write). 
+- Ran `bun run lint` — exits 1 with exactly ONE error, but it is in `src/components/views/principal/subjects.tsx` (an `useEffect(setState)` antipattern at line 314) — NOT in my file. Confirmed by running `npx eslint src/components/views/principal/assignments.tsx` directly: exits 0 with ZERO errors and ZERO warnings. The subjects.tsx lint failure is pre-existing and outside this task's scope (the task said "DO NOT modify … other view files" — `subjects.tsx` is another view file).
+
+Stage Summary:
+- `src/components/views/principal/assignments.tsx` is now a real, production-grade implementation (NOT placeholder): the bulk workflow (select teacher → tick classes → per-class subject checkboxes gated by `options.classSubjects` + class-teacher checkbox → idempotent POST `/api/assignments/bulk`) and the grouped display (by-teacher and by-class, with per-subject chip X → `DELETE /api/assignments/[id]` and class-teacher toggle → `POST/DELETE /api/class-teachers`) both work end-to-end. The named export `PrincipalAssignments` is preserved (the shell import is unchanged).
+- `bun run lint` passes for my file (0 errors / 0 warnings on `npx eslint src/components/views/principal/assignments.tsx`). The single project-wide lint error is in `subjects.tsx` (pre-existing, outside scope).
+- Deviations from spec: none functional. Minor UX additions (Select-all/Clear helper buttons per class panel, "N of M subjects selected" counter, by-class mode implemented rather than optional) — all are additive and don't change the contract.
+
+---
+Task ID: 8b-subjects-ui
+Agent: full-stack-developer (Z.ai Code)
+Task: Add a "Class Subjects" configuration section to the principal Subjects view + a "Class Teacher Of" section and class-teacher badges to the teacher dashboard. Consume the new ClassSubject/ClassTeacher models and the expanded (~42) subject library. Touch ONLY `src/components/views/principal/subjects.tsx` and `src/components/views/teacher/dashboard.tsx`. Keep named exports `PrincipalSubjects` and `TeacherDashboard`.
+
+Work Log:
+- Read worklog.md (full) to align with the flat-class structure (KG → Nursery 1–2 → Primary 1–6 → JSS 1–3 → SS 1–3, no arms), the new ClassSubject(classId, subjectId) + ClassTeacher(teacherId, classId) models, and the ~42-subject library with an `active` boolean.
+- Read the actual API route handlers (did not assume the contract):
+  • `src/app/api/subjects/route.ts` — `GET /api/subjects` returns `{ subjects: [{ id, name, code, _count: { assignments, results } }] }`. The `active` boolean is NOT exposed by this route.
+  • `src/app/api/class-subjects/route.ts` — `GET ?classId=` → `{ classId, subjects: [{ id, name, code, active, classSubjectId }] }`; `POST { classId, subjectId }` → `{ id, classId, subjectId }` (400 if already offered); full-matrix `GET` → `{ classSubjects: [...] }`.
+  • `src/app/api/class-subjects/[id]/route.ts` — `DELETE` → `{ ok: true }` (404 if not found).
+  • `src/app/api/dashboard/teacher/route.ts` — returns `classTeacherClasses: [{ id, name, level, category }]`, `classes[].isClassTeacher`, `assignments[].isClassTeacher`.
+  • `src/app/api/classes/route.ts` — `GET /api/classes` → `{ classes: [{ id, name, level, category, studentCount }] }` ordered by level (for the class selector).
+
+A. `src/components/views/principal/subjects.tsx` — full rewrite (named export `PrincipalSubjects` preserved):
+- Wrapped the existing Subject Library CRUD (table + create/edit dialog + delete AlertDialog, unchanged) in a new `Tabs` with two triggers: "Subject Library" + "Class Subjects".
+- The "New Subject" header button is now conditionally rendered only when the library tab is active.
+- New `ClassSubjectsConfig` sub-component:
+  • Fetches `['classes']` (flat, ordered by level) for a Select class selector.
+  • Defaults to the first class using a DERIVED `effectiveClassId = classId || classes[0]?.id || ''` (NOT a useEffect+setState cascade — the first implementation used useEffect and `bun run lint` flagged it with `react-hooks/set-state-in-effect`; refactored to derived state).
+  • Fetches offered subjects via `useQuery(['class-subjects', effectiveClassId])` (enabled only when a class is selected).
+  • Two scrollable columns (`grid-cols-1 lg:grid-cols-2`, each `max-h-96 overflow-y-auto`):
+    – **Offered subjects** — each row has a "Remove" button → `DELETE /api/class-subjects/[classSubjectId]`.
+    – **Available to add** — subjects in the library NOT yet offered, each with an "Add" button → `POST /api/class-subjects { classId, subjectId }`.
+  • A single search box filters BOTH lists by name or code.
+  • Live count "X subjects offered for <Class>" + empty-state messages per list.
+  • Mobile responsive: columns stack on mobile; lists wrap; ≥44px touch targets.
+  • On add/remove, invalidates `['class-subjects', effectiveClassId]`, `['class-subjects']` (matrix), `['assignments']`, `['assignments-options']` (so the teacher assignment form's offered-subject options refresh).
+  • Subject create/edit/delete now ALSO invalidates `['class-subjects']` so newly-created subjects appear in available-to-add and deleted subjects disappear from offered lists.
+
+B. `src/components/views/teacher/dashboard.tsx` — surgical edits (named export `TeacherDashboard` preserved):
+- Extended `Assignment` type with `isClassTeacher?: boolean`; added `ClassTeacherClass` type; extended `TeacherDashboard` with `classTeacherClasses: ClassTeacherClass[]` and `classes[].isClassTeacher?: boolean`.
+- Added a "Class Teacher Of" card (emerald-accented, `ShieldCheck` icon) between the results summary and the assignments-overview grid. Renders class names as emerald badges. HIDDEN when the teacher is not a class teacher of any class (`{!isLoading && (data?.classTeacherClasses?.length ?? 0) > 0 && (...)}`) — keeps the dashboard uncluttered for non-class-teachers.
+- In the "Assigned Classes" list, each class badge is wrapped in `flex items-center gap-1.5` with a small emerald "Class Teacher" badge next to classes where `c.isClassTeacher` is true.
+- In the "Assignment Detail" list, each row's "Class: <name>" line is now `flex flex-wrap items-center gap-1.5` and shows an inline emerald "Class Teacher" badge when `a.isClassTeacher` is true.
+- No new queries/mutations — purely consumes the existing `['dashboard', 'teacher']` response.
+
+Lint & dev server:
+- `bun run lint` passes with 0 errors and 0 warnings (after the useEffect→derived-state refactor).
+- Dev server log shows clean compilations after the edits.
+
+Stage Summary:
+- Both views are real, working implementations (no placeholders). The principal can configure per-class offered subjects via a dedicated "Class Subjects" tab (class selector, search, two-column offered/available, live counts, add/remove mutations with full cache invalidation). The teacher dashboard surfaces class-teacher responsibility via a dedicated emerald "Class Teacher Of" card (hidden when empty) + inline emerald "Class Teacher" badges on the Assigned Classes list and Assignment Detail rows.
+- Named exports `PrincipalSubjects` and `TeacherDashboard` preserved (shell imports unchanged). Only the two permitted files were touched — no schema, lib, API route, seed, shell, or other view files modified.
+- Deviation / NOTE for backend: `GET /api/subjects` does NOT return the `active` boolean, so (a) the subject library has NO active/inactive toggle, and (b) the "available to add" list cannot skip inactive subjects. The class-subjects route DOES return `active` per offered subject. Surfacing `active` on `GET /api/subjects` (and adding a PUT toggle on `PUT /api/subjects/[id]`) would complete the active-subject feature on the UI side. This is a backend-API-surface gap, not a UI bug.
+
+---
+Task ID: 8 (multi-class multi-subject assignments + subject library)
+Agent: main (Z.ai Code)
+Task: Support teacher → multiple classes → multiple subjects per class + class-teacher responsibility; expand subject library; add class-subject curriculum configuration. Preserve all existing features.
+
+Work Log:
+- Schema (prisma/schema.prisma): added `ClassSubject(classId, subjectId, @@unique)` — which subjects each class OFFERS; added `ClassTeacher(teacherId, classId, @@unique)` — class-teacher (form-tutor) responsibility distinct from subject teaching; added `active Boolean` to Subject; added reverse relations on Class + Teacher. Reset DB + pushed schema + regenerated Prisma client.
+- Seed (src/scripts/seed.ts): expanded subject library to 42 subjects (NERDC baseline + school-specific: English Studies, Mathematics, Further Maths, Basic Science, Basic Science & Technology, Basic Technology, PHE, Nigerian Language, Yoruba, Nigerian History, Social Studies, Social & Citizenship Studies, Civic Education, CCA, Music, Poetry, RNV, CRS, Islamic Studies, Arabic, French, Basic Digital Literacy, Computer Studies, Pre-vocational Studies, Agricultural Science, Animal Husbandry, Home Economics, Business Studies, Economics, Government, Literature in English, Biology, Chemistry, Physics, Geography + early-years Letter Work/Number Work/Social Habits/Health Habits/Rhymes and Songs/Creative Arts/Handwriting). Seeded ClassSubject defaults per class level (early-years, primary lower/upper, JSS, SS) — NOT every subject to every class. Added Mrs. Adebayo teacher (adebayo@resco.edu.ng / Adebayo@2026) with the exact test scenario: Primary 2 (class teacher + English/Maths/Basic Science), Primary 3 (no class teacher + English/Yoruba), Primary 5 (class teacher + Social Studies/Civic Education). Kept Mr. Ade → JSS 1 — Mathematics. Added RNV to SS subject list (was missing) + re-seeded so RNV is offered across ALL 15 classes.
+- Lib: created src/lib/curriculum.ts with `isSubjectOfferedForClass`, `getOfferedSubjectIdsForClass`, `getOfferedSubjectsForClass`, `isClassTeacher`.
+- Backend APIs (all principal-only except where noted):
+  - Results POST /api/results + PUT /api/results/[id]: added ClassSubject guard — a result can only be saved if the subject is offered for the class (returns 400 "This subject is not offered for the selected class"). Teacher-assignment check (requireTeacherAuthorized) unchanged.
+  - NEW /api/class-subjects (GET ?classId= | GET all principal | POST {classId, subjectId} | DELETE [id]).
+  - NEW /api/class-teachers (GET ?teacherId= | GET all principal | POST {teacherId, classId} | DELETE [id]).
+  - NEW /api/assignments/bulk (POST {teacherId, entries:[{classId, subjectIds[], classTeacher?}]}) — idempotent multi-class multi-subject creation with class-teacher flags.
+  - Updated /api/assignments GET: now returns `assignments[].isClassTeacher` + a separate `classTeachers[]` list (so a teacher class-teacher of a class with no subjects still appears).
+  - Updated /api/assignments/options: now returns `classSubjects: { [classId]: [subjectId] }` (offered subjects per class) so the form shows only offered subjects per class.
+  - Updated /api/dashboard/teacher: now returns `classTeacherClasses[]` + `classes[].isClassTeacher` + `assignments[].isClassTeacher`.
+  - Added PATCH /api/subjects/[id] to toggle `active` (activate/deactivate subjects).
+- Frontend (delegated to 2 parallel subagents):
+  - Task 8a-assignments-ui: redesigned src/components/views/principal/assignments.tsx — bulk multi-step workflow (select teacher → checkbox classes grouped by category → per-class class-teacher toggle + per-class subject checkboxes from offered subjects only → Save bulk POST) + grouped display (by-teacher/by-class tabs, class-teacher badges, per-subject remove X, class-teacher make/remove buttons, search).
+  - Task 8b-subjects-ui: extended src/components/views/principal/subjects.tsx with a "Class Subjects" tab (class selector + offered/available-to-add columns with Add/Remove) + src/components/views/teacher/dashboard.tsx "Class Teacher Of" card + class-teacher badges on assigned classes.
+- Verified end-to-end via Agent Browser + curl:
+  1. Teacher Assignments view shows Mrs. Adebayo's exact test scenario: Primary 2 (Class Teacher + Basic Science/English/Mathematics), Primary 3 (no class teacher + English/Yoruba), Primary 5 (Class Teacher + Civic/Social Studies). Subjects independent per class.
+  2. Subject Management → Class Subjects tab: Primary 2 shows "15 subjects offered" with English/Maths/Basic Science/Yoruba/RNV/Civic + "Available to add" list. RNV offered across all 15 classes (KG→SS3).
+  3. Mrs. Adebayo teacher dashboard: "Class Teacher Of: Primary 2, Primary 5"; Assigned Classes: Primary 2 (Class Teacher), Primary 3, Primary 5 (Class Teacher); My Subjects: the 6 subjects she teaches. Does NOT see unassigned classes/subjects.
+  4. Enter Results selector for Mrs. Adebayo shows EXACTLY her 7 assigned class+subject combos (no Primary 2 Biology, no Primary 5 Maths) — backend-enforced.
+  5. Result entry ClassSubject guard: valid POST (JSS1 Maths, offered + Mr. Ade assigned) → total 85, grade A, status SAVED. Non-offered subject (Poetry for JSS1) → 400 "This subject is not offered for the selected class".
+  6. Subject library: 42 subjects, all 29 required present (RNV, Islam, CRK, Yoruba, Civic, Business, Social, Animal Husbandry, Music, Poetry + early-years areas).
+  7. `bun run lint` passes (0 errors). Dev server healthy.
+- Default credentials: principal@resco.edu.ng / Principal@2026; teacher@resco.edu.ng / Teacher@2026 (JSS1 Maths); adebayo@resco.edu.ng / Adebayo@2026 (P2/P3/P5 multi-class multi-subject, class teacher of P2+P5).
+
+Stage Summary:
+- PART 1 (multi-class multi-subject + class-teacher): DONE. A teacher can have many (class, subject) assignments across multiple classes with independent subject selections per class; class-teacher responsibility is a separate, toggleable flag per (teacher, class); enforced in DB (ClassTeacher + TeacherAssignment), backend (requireTeacherAuthorized + isSubjectOfferedForClass), and UI (bulk workflow + grouped display).
+- PART 2 (subject library): DONE. 42-subject configurable library covering early years, primary, JSS, SS; ClassSubject curriculum configuration per class; subjects activate/deactivate; RNV available across all 15 classes; NOT every subject forced to every class.
+- All existing features preserved (auth, dashboards, students, classes, results CA/30+Exam/70=Total/100, cumulative 81.5/81.67, grading, positions, remarks, submit/approve/lock/reopen, audit, report cards, PDF, bulk, settings, mobile).

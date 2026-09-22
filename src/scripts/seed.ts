@@ -4,7 +4,6 @@ import { hashPassword } from '../lib/password'
 const db = new PrismaClient()
 
 // The school's flat class structure (NO class arms).
-// KG → Nursery 1–2 → Primary 1–6 → JSS 1–3 → SS 1–3
 const CLASS_DEFS: { name: string; level: number; category: string }[] = [
   { name: 'KG', level: 0, category: 'Early Years' },
   { name: 'Nursery 1', level: 1, category: 'Nursery' },
@@ -22,6 +21,180 @@ const CLASS_DEFS: { name: string; level: number; category: string }[] = [
   { name: 'SS 2', level: 13, category: 'Senior Secondary' },
   { name: 'SS 3', level: 14, category: 'Senior Secondary' },
 ]
+
+// ─── SUBJECT LIBRARY ──────────────────────────────────────────────────────
+// Broad, configurable library covering early years, primary, junior & senior
+// secondary. Based on NERDC baseline + school-specific requests (RNV, Islam,
+// CRK, Yoruba, Civic Education, Business Studies, Social Studies, Animal
+// Husbandry, Music, Poetry). Subjects are NOT auto-assigned to classes — the
+// principal configures ClassSubject per class.
+const SUBJECT_LIBRARY: { name: string; code?: string }[] = [
+  // Core / cross-level
+  { name: 'English Studies' },
+  { name: 'Mathematics' },
+  { name: 'Further Mathematics' },
+  { name: 'Basic Science' },
+  { name: 'Basic Science and Technology' },
+  { name: 'Basic Technology' },
+  { name: 'Physical and Health Education' },
+  { name: 'Nigerian Language' },
+  { name: 'Yoruba' },
+  { name: 'Nigerian History' },
+  { name: 'Social Studies' },
+  { name: 'Social and Citizenship Studies' },
+  { name: 'Civic Education' },
+  { name: 'Cultural and Creative Arts (CCA)' },
+  { name: 'Music' },
+  { name: 'Poetry' },
+  { name: 'Religious and National Values (RNV)' },
+  { name: 'Christian Religious Studies (CRS)' },
+  { name: 'Islamic Studies' },
+  { name: 'Arabic Language' },
+  { name: 'French' },
+  { name: 'Basic Digital Literacy' },
+  { name: 'Computer Studies' },
+  { name: 'Pre-vocational Studies' },
+  { name: 'Agricultural Science' },
+  { name: 'Animal Husbandry' },
+  { name: 'Home Economics' },
+  { name: 'Business Studies' },
+  { name: 'Economics' },
+  { name: 'Government' },
+  { name: 'Literature in English' },
+  { name: 'Biology' },
+  { name: 'Chemistry' },
+  { name: 'Physics' },
+  { name: 'Geography' },
+  // Early-years learning areas
+  { name: 'Letter Work' },
+  { name: 'Number Work' },
+  { name: 'Social Habits' },
+  { name: 'Health Habits' },
+  { name: 'Rhymes and Songs' },
+  { name: 'Creative Arts' },
+  { name: 'Handwriting' },
+]
+
+// ─── CLASS → SUBJECTS OFFERED (curriculum defaults) ──────────────────────
+// Sensible curriculum-appropriate defaults per class. NOT every subject to
+// every class. The principal can edit via the Subject Management UI.
+const EARLY_YEARS_SUBJECTS = [
+  'Letter Work',
+  'Number Work',
+  'Social Habits',
+  'Health Habits',
+  'Basic Science',
+  'Rhymes and Songs',
+  'Creative Arts',
+  'Physical and Health Education',
+  'Religious and National Values (RNV)',
+  'Handwriting',
+]
+
+const PRIMARY_LOWER_SUBJECTS = [ // Primary 1–3
+  'English Studies',
+  'Mathematics',
+  'Yoruba',
+  'Basic Science',
+  'Physical and Health Education',
+  'Religious and National Values (RNV)',
+  'Christian Religious Studies (CRS)',
+  'Islamic Studies',
+  'Nigerian History',
+  'Social Studies',
+  'Civic Education',
+  'Cultural and Creative Arts (CCA)',
+  'Music',
+  'Poetry',
+  'Handwriting',
+]
+
+const PRIMARY_UPPER_SUBJECTS = [ // Primary 4–6 (adds a few)
+  'English Studies',
+  'Mathematics',
+  'Yoruba',
+  'Basic Science and Technology',
+  'Physical and Health Education',
+  'Religious and National Values (RNV)',
+  'Christian Religious Studies (CRS)',
+  'Islamic Studies',
+  'Nigerian History',
+  'Social Studies',
+  'Civic Education',
+  'Cultural and Creative Arts (CCA)',
+  'Music',
+  'Poetry',
+  'Basic Digital Literacy',
+  'Computer Studies',
+  'Pre-vocational Studies',
+  'Agricultural Science',
+  'Home Economics',
+  'French',
+  'Arabic Language',
+  'Handwriting',
+]
+
+const JSS_SUBJECTS = [
+  'English Studies',
+  'Mathematics',
+  'Basic Science',
+  'Basic Technology',
+  'Social Studies',
+  'Civic Education',
+  'Religious and National Values (RNV)',
+  'Christian Religious Studies (CRS)',
+  'Islamic Studies',
+  'Arabic Language',
+  'Yoruba',
+  'French',
+  'Cultural and Creative Arts (CCA)',
+  'Music',
+  'Computer Studies',
+  'Business Studies',
+  'Agricultural Science',
+  'Home Economics',
+  'Physical and Health Education',
+  'Pre-vocational Studies',
+]
+
+const SS_SUBJECTS = [
+  'English Studies',
+  'Mathematics',
+  'Further Mathematics',
+  'Biology',
+  'Chemistry',
+  'Physics',
+  'Agricultural Science',
+  'Animal Husbandry',
+  'Computer Studies',
+  'Economics',
+  'Government',
+  'Literature in English',
+  'Christian Religious Studies (CRS)',
+  'Islamic Studies',
+  'Arabic Language',
+  'French',
+  'Yoruba',
+  'Civic Education',
+  'Geography',
+  'Home Economics',
+  'Music',
+  'Cultural and Creative Arts (CCA)',
+  'Physical and Health Education',
+  'Business Studies',
+  'Religious and National Values (RNV)',
+]
+
+// Map class name → offered subjects. Includes the test-scenario subjects.
+function classOfferedSubjects(className: string): string[] {
+  if (className === 'KG') return EARLY_YEARS_SUBJECTS
+  if (className.startsWith('Nursery')) return EARLY_YEARS_SUBJECTS
+  if (['Primary 1', 'Primary 2', 'Primary 3'].includes(className)) return PRIMARY_LOWER_SUBJECTS
+  if (['Primary 4', 'Primary 5', 'Primary 6'].includes(className)) return PRIMARY_UPPER_SUBJECTS
+  if (className.startsWith('JSS')) return JSS_SUBJECTS
+  if (className.startsWith('SS')) return SS_SUBJECTS
+  return []
+}
 
 async function main() {
   // ── School settings (singleton) ────────────────────────────────────────
@@ -56,28 +229,48 @@ async function main() {
     console.log('Principal already exists')
   }
 
-  // ── Demo teacher (assigned to JSS 1 — Mathematics) ─────────────────────
-  const teacherEmail = 'teacher@resco.edu.ng'
-  const teacherPass = 'Teacher@2026'
-  let teacherUser = await db.user.findUnique({
-    where: { email: teacherEmail },
+  // ── Demo teacher 1: Mr. Ade → JSS 1 — Mathematics ─────────────────────
+  const teacher1Email = 'teacher@resco.edu.ng'
+  const teacher1Pass = 'Teacher@2026'
+  let teacher1User = await db.user.findUnique({
+    where: { email: teacher1Email },
     include: { teacher: true },
   })
-  if (!teacherUser) {
-    teacherUser = await db.user.create({
+  if (!teacher1User) {
+    teacher1User = await db.user.create({
       data: {
-        email: teacherEmail,
+        email: teacher1Email,
         name: 'Mr. Ade Demo',
         role: 'TEACHER',
-        passwordHash: hashPassword(teacherPass),
+        passwordHash: hashPassword(teacher1Pass),
         active: true,
         teacher: { create: {} },
       },
       include: { teacher: true },
     })
-    console.log(`Demo teacher created: ${teacherEmail} / ${teacherPass}`)
-  } else {
-    console.log('Demo teacher already exists')
+    console.log(`Demo teacher 1 created: ${teacher1Email} / ${teacher1Pass}`)
+  }
+
+  // ── Demo teacher 2: Mrs. Adebayo (multi-class multi-subject test) ──────
+  const teacher2Email = 'adebayo@resco.edu.ng'
+  const teacher2Pass = 'Adebayo@2026'
+  let teacher2User = await db.user.findUnique({
+    where: { email: teacher2Email },
+    include: { teacher: true },
+  })
+  if (!teacher2User) {
+    teacher2User = await db.user.create({
+      data: {
+        email: teacher2Email,
+        name: 'Mrs. Adebayo',
+        role: 'TEACHER',
+        passwordHash: hashPassword(teacher2Pass),
+        active: true,
+        teacher: { create: {} },
+      },
+      include: { teacher: true },
+    })
+    console.log(`Demo teacher 2 created: ${teacher2Email} / ${teacher2Pass}`)
   }
 
   // ── Classes (flat — no arms) ────────────────────────────────────────────
@@ -89,31 +282,38 @@ async function main() {
   }
   console.log(`Seeded ${CLASS_DEFS.length} classes (no arms)`)
 
-  // ── Subjects ───────────────────────────────────────────────────────────
-  const subjects = [
-    'Mathematics',
-    'English Language',
-    'Basic Science',
-    'Social Studies',
-    'Civic Education',
-    'Computer Studies',
-    'Business Studies',
-    'Agricultural Science',
-    'Biology',
-    'Chemistry',
-    'Physics',
-    'Government',
-    'Economics',
-    'Literature in English',
-    'Geography',
-    'Christian Religious Studies',
-    'Further Mathematics',
-  ]
-  for (const name of subjects) {
-    const exists = await db.subject.findFirst({ where: { name } })
-    if (!exists) await db.subject.create({ data: { name } })
+  // ── Subject library ─────────────────────────────────────────────────────
+  const subjectMap = new Map<string, string>() // name → id
+  for (const s of SUBJECT_LIBRARY) {
+    const exists = await db.subject.findFirst({ where: { name: s.name } })
+    if (exists) {
+      subjectMap.set(s.name, exists.id)
+    } else {
+      const created = await db.subject.create({ data: { name: s.name, code: s.code ?? null } })
+      subjectMap.set(s.name, created.id)
+    }
   }
-  console.log('Subjects seeded')
+  console.log(`Seeded ${subjectMap.size} subjects in the library`)
+
+  // ── ClassSubject defaults (which subjects each class offers) ───────────
+  for (const cd of CLASS_DEFS) {
+    const klass = await db.class.findUnique({ where: { name: cd.name } })
+    if (!klass) continue
+    const offered = classOfferedSubjects(cd.name)
+    for (const subjName of offered) {
+      const subjId = subjectMap.get(subjName)
+      if (!subjId) continue
+      const exists = await db.classSubject.findUnique({
+        where: {
+          classId_subjectId: { classId: klass.id, subjectId: subjId },
+        },
+      })
+      if (!exists) {
+        await db.classSubject.create({ data: { classId: klass.id, subjectId: subjId } })
+      }
+    }
+  }
+  console.log('Seeded ClassSubject defaults per class')
 
   // ── Grade boundaries (default) ─────────────────────────────────────────
   const existingGrades = await db.gradeBoundary.count()
@@ -177,7 +377,7 @@ async function main() {
     data: { currentSessionId: session.id, currentTermId: firstTerm?.id ?? null },
   })
 
-  // ── Demo student: John Doe in JSS 1 (for the mandatory calculation test) ──
+  // ── Demo student: John Doe in JSS 1 ─────────────────────────────────────
   const jss1 = await db.class.findUnique({ where: { name: 'JSS 1' } })
   if (jss1) {
     let john = await db.student.findUnique({ where: { admissionNumber: 'RES/2026/001' } })
@@ -194,29 +394,69 @@ async function main() {
       })
       console.log('Demo student John Doe created in JSS 1')
     }
+  }
 
-    // Assign Mr. Ade Demo to JSS 1 — Mathematics
+  // ── Assignment 1: Mr. Ade → JSS 1 — Mathematics ────────────────────────
+  if (teacher1User?.teacher && jss1) {
     const maths = await db.subject.findFirst({ where: { name: 'Mathematics' } })
-    if (teacherUser.teacher && maths) {
-      const existingAssignment = await db.teacherAssignment.findFirst({
-        where: { teacherId: teacherUser.teacher.id, classId: jss1.id, subjectId: maths.id },
+    if (maths) {
+      const exists = await db.teacherAssignment.findFirst({
+        where: { teacherId: teacher1User.teacher.id, classId: jss1.id, subjectId: maths.id },
       })
-      if (!existingAssignment) {
+      if (!exists) {
         await db.teacherAssignment.create({
-          data: {
-            teacherId: teacherUser.teacher.id,
-            classId: jss1.id,
-            subjectId: maths.id,
-          },
+          data: { teacherId: teacher1User.teacher.id, classId: jss1.id, subjectId: maths.id },
         })
         console.log('Assigned Mr. Ade Demo → JSS 1 — Mathematics')
       }
     }
   }
 
+  // ── Assignment 2 (TEST SCENARIO): Mrs. Adebayo multi-class multi-subject
+  //    Primary 2: Class Teacher = YES, English Studies, Mathematics, Basic Science
+  //    Primary 3: Class Teacher = NO,  English Studies, Yoruba
+  //    Primary 5: Class Teacher = YES, Social Studies, Civic Education
+  if (teacher2User?.teacher) {
+    const scenarios: { className: string; classTeacher: boolean; subjects: string[] }[] = [
+      { className: 'Primary 2', classTeacher: true, subjects: ['English Studies', 'Mathematics', 'Basic Science'] },
+      { className: 'Primary 3', classTeacher: false, subjects: ['English Studies', 'Yoruba'] },
+      { className: 'Primary 5', classTeacher: true, subjects: ['Social Studies', 'Civic Education'] },
+    ]
+    for (const sc of scenarios) {
+      const klass = await db.class.findUnique({ where: { name: sc.className } })
+      if (!klass) continue
+      // Class-teacher responsibility
+      if (sc.classTeacher) {
+        const ctExists = await db.classTeacher.findUnique({
+          where: { teacherId_classId: { teacherId: teacher2User.teacher.id, classId: klass.id } },
+        })
+        if (!ctExists) {
+          await db.classTeacher.create({
+            data: { teacherId: teacher2User.teacher.id, classId: klass.id },
+          })
+        }
+      }
+      // Subject-teaching assignments
+      for (const subjName of sc.subjects) {
+        const subj = await db.subject.findFirst({ where: { name: subjName } })
+        if (!subj) continue
+        const exists = await db.teacherAssignment.findFirst({
+          where: { teacherId: teacher2User.teacher.id, classId: klass.id, subjectId: subj.id },
+        })
+        if (!exists) {
+          await db.teacherAssignment.create({
+            data: { teacherId: teacher2User.teacher.id, classId: klass.id, subjectId: subj.id },
+          })
+        }
+      }
+    }
+    console.log('Assigned Mrs. Adebayo → Primary 2 (CT + English/Maths/Basic Science), Primary 3 (English/Yoruba), Primary 5 (CT + Social Studies/Civic Education)')
+  }
+
   console.log('Seed complete.')
   console.log('Principal login:', principalEmail, '/', principalPass)
-  console.log('Teacher login:', teacherEmail, '/', teacherPass, '(JSS 1 — Mathematics)')
+  console.log('Teacher 1 login:', teacher1Email, '/', teacher1Pass, '(JSS 1 — Mathematics)')
+  console.log('Teacher 2 login:', teacher2Email, '/', teacher2Pass, '(Primary 2/3/5 — multi-class multi-subject)')
 }
 
 main()

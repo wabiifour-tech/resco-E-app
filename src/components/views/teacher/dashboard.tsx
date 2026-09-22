@@ -15,6 +15,7 @@ import {
   FileText,
   ArrowRight,
   Loader2,
+  ShieldCheck,
 } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,6 +33,14 @@ type Assignment = {
   className: string
   subjectId: string
   subjectName: string
+  isClassTeacher?: boolean
+}
+
+type ClassTeacherClass = {
+  id: string
+  name: string
+  level: number
+  category: string | null
 }
 
 type TeacherDashboard = {
@@ -43,8 +52,9 @@ type TeacherDashboard = {
     termId: string | null
   }
   assignments: Assignment[]
-  classes: { id: string; name: string }[]
+  classes: { id: string; name: string; isClassTeacher?: boolean }[]
   subjects: { id: string; name: string }[]
+  classTeacherClasses: ClassTeacherClass[]
   results: {
     saved: number
     submitted: number
@@ -255,6 +265,34 @@ export function TeacherDashboard() {
         )}
       </section>
 
+      {/* Class teacher of */}
+      {!isLoading && (data?.classTeacherClasses?.length ?? 0) > 0 && (
+        <Card className="border-emerald-200 bg-emerald-50/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              Class Teacher Of
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {data!.classTeacherClasses.map((c) => (
+                <Badge
+                  key={c.id}
+                  variant="outline"
+                  className="border-emerald-300 bg-emerald-100 px-3 py-1 text-sm text-emerald-800"
+                >
+                  {c.name}
+                </Badge>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-emerald-800/70">
+              You are the homeroom / form teacher for the class(es) above.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Assignments overview */}
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -275,13 +313,22 @@ export function TeacherDashboard() {
               <ScrollArea className="max-h-64">
                 <div className="flex flex-wrap gap-2 pr-2">
                   {data.classes.map((c) => (
-                    <Badge
-                      key={c.id}
-                      variant="secondary"
-                      className="px-3 py-1 text-sm"
-                    >
-                      {c.name}
-                    </Badge>
+                    <div key={c.id} className="flex items-center gap-1.5">
+                      <Badge
+                        variant="secondary"
+                        className="px-3 py-1 text-sm"
+                      >
+                        {c.name}
+                      </Badge>
+                      {c.isClassTeacher && (
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] font-medium text-emerald-700"
+                        >
+                          Class Teacher
+                        </Badge>
+                      )}
+                    </div>
                   ))}
                 </div>
               </ScrollArea>
@@ -356,8 +403,16 @@ export function TeacherDashboard() {
                       </span>
                       <div>
                         <p className="text-sm font-medium">{a.subjectName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Class: {a.className}
+                        <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>Class: {a.className}</span>
+                          {a.isClassTeacher && (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-300 bg-emerald-50 px-1.5 py-0 text-[10px] font-medium text-emerald-700"
+                            >
+                              Class Teacher
+                            </Badge>
+                          )}
                         </p>
                       </div>
                     </div>
