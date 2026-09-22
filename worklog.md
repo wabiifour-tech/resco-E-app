@@ -549,3 +549,23 @@ Stage Summary:
 - The flat structure (KG → Nursery 1-2 → Primary 1-6 → JSS 1-3 → SS 1-3) exists in: DB schema, principal class management, student assignment, teacher assignment, result entry, backend authorization (requireTeacherAuthorized(classId, subjectId)), result queries (filter by classId), report cards ("Class: JSS 1"), bulk reports (Load all students in class), and academic history (results keyed by student+subject+session+term with a classId snapshot).
 - Mandatory calculation test (85/78/82 → 81.5/81.67) PASSES with the flat-class plumbing.
 - Default credentials unchanged: principal@resco.edu.ng / Principal@2026; teacher@resco.edu.ng / Teacher@2026 (assigned to JSS 1 — Mathematics).
+
+---
+Task ID: 7 (settings cache bug)
+Agent: main (Z.ai Code)
+Task: Fix — saved school logo & principal name not taking effect on the report card (placeholder logo still showing).
+
+Work Log:
+- Investigated: queried /api/settings + /api/report-card via curl → confirmed the DB HAS the saved data (logoDataUrl = 118KB PNG, principalName = "Pastor (Mrs) Odewabi A. R"). The report-card API returns these correctly. The report-card-document.tsx rendering logic is correct (`<img src={s.logoDataUrl}>` when present, else School icon placeholder; `{s.principalName ? s.principalName : 'Principal'}`).
+- Root cause: TanStack Query CACHE. The report-card query is keyed only by `['report-card', studentId, sessionId, termId]` (no settings component) with `staleTime: 15_000` + `refetchOnWindowFocus: false`. So a report card previewed BEFORE the logo was saved served the STALE cached data (placeholder logo) even after the user saved the logo in Settings — because the settings save mutation only invalidated `['settings']`, not `['report-card']`.
+- Fix in src/components/views/principal/settings.tsx:
+  - The shared `invalidate()` helper (passed to SettingsForm) now invalidates `['settings']` + `['report-card']` + `['dashboard']` — so any previously-previewed report card refetches fresh data with the new logo/principal name, and the dashboard school name refreshes.
+  - The saveSessionMutation (current session/term) now ALSO invalidates `['results']`, `['approvals']`, `['dashboard']`, `['report-card']` in addition to `['active-session-term']` — since changing the current term affects every result/approval/dashboard/report-card view.
+- Browser-verified after fix:
+  - Settings page: shows the saved logo (500×500 PNG, not broken, isDataUrl=true) in the preview + the principal name "Pastor (Mrs) Odewabi A. R" in the input.
+  - Report card preview: shows `<img alt="School logo" naturalW=500 naturalH=500 isDataUrl=true>` (the saved logo, not the placeholder) + "Pastor (Mrs) Odewabi A. R" above "Principal's Signature".
+- Screenshot: download/report-card-with-saved-logo.png.
+
+Stage Summary:
+- The saved school logo and principal name now take effect on the report card immediately after saving (cache invalidation). `bun run lint` passes (0 errors).
+- The data was always persisted correctly; the bug was purely client-side query cache invalidation.

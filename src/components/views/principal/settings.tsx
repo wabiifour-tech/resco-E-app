@@ -85,7 +85,17 @@ export function PrincipalSettings() {
           </CardContent>
         </Card>
       ) : data ? (
-        <SettingsForm key={dataUpdatedAt} initial={data} invalidate={() => qc.invalidateQueries({ queryKey: ['settings'] })} />
+        <SettingsForm
+          key={dataUpdatedAt}
+          initial={data}
+          invalidate={() => {
+            // Invalidate settings + everything that embeds school branding
+            // (report-card logo/principal name, dashboard school name, etc.)
+            qc.invalidateQueries({ queryKey: ['settings'] })
+            qc.invalidateQueries({ queryKey: ['report-card'] })
+            qc.invalidateQueries({ queryKey: ['dashboard'] })
+          }}
+        />
       ) : null}
     </div>
   )
@@ -134,6 +144,11 @@ function SettingsForm({
       toast.success('Current academic session and term updated')
       invalidate()
       qc.invalidateQueries({ queryKey: ['active-session-term'] })
+      // A term/session change affects every result/approval/dashboard view
+      qc.invalidateQueries({ queryKey: ['results'] })
+      qc.invalidateQueries({ queryKey: ['approvals'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      qc.invalidateQueries({ queryKey: ['report-card'] })
     },
     onError: (e: ApiError) => toast.error(e.message),
   })
