@@ -5,7 +5,8 @@ import { api } from '@/lib/api-client'
 import { LoginScreen } from '@/components/views/login-screen'
 import { PrincipalShell } from '@/components/shell/principal-shell'
 import { TeacherShell } from '@/components/shell/teacher-shell'
-import { Loader2, GraduationCap } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import { SchoolLogo } from '@/components/shell/school-logo'
 
 export function AppShell() {
   const user = useAppStore((s) => s.user)
@@ -33,9 +34,7 @@ export function AppShell() {
   if (loadingAuth) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-background">
-        <div className="h-12 w-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-          <GraduationCap className="h-6 w-6" />
-        </div>
+        <SchoolLogo className="h-14 w-14" />
         <div className="flex items-center gap-2 text-muted-foreground text-sm">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading RESCO eCard...
         </div>

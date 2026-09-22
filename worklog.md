@@ -675,3 +675,25 @@ Stage Summary:
 - PART 1 (multi-class multi-subject + class-teacher): DONE. A teacher can have many (class, subject) assignments across multiple classes with independent subject selections per class; class-teacher responsibility is a separate, toggleable flag per (teacher, class); enforced in DB (ClassTeacher + TeacherAssignment), backend (requireTeacherAuthorized + isSubjectOfferedForClass), and UI (bulk workflow + grouped display).
 - PART 2 (subject library): DONE. 42-subject configurable library covering early years, primary, JSS, SS; ClassSubject curriculum configuration per class; subjects activate/deactivate; RNV available across all 15 classes; NOT every subject forced to every class.
 - All existing features preserved (auth, dashboards, students, classes, results CA/30+Exam/70=Total/100, cumulative 81.5/81.67, grading, positions, remarks, submit/approve/lock/reopen, audit, report cards, PDF, bulk, settings, mobile).
+
+---
+Task ID: 9 (school logo placeholder replacement)
+Agent: main (Z.ai Code)
+Task: Replace the logo placeholder (GraduationCap icon) across the app with the actual school logo the user uploaded (upload/logo-1765919910.png, 500×500 PNG, 88KB).
+
+Work Log:
+- Verified the uploaded file: 500×500 PNG, RGBA, 88KB.
+- Set the logo as the default school branding in the DB: base64-encoded the PNG → updated SchoolSetting.logoDataUrl (118,502-char data URL) for the singleton row (idempotent upsert). Also copied the PNG to public/school-logo.png as a static fallback asset.
+- Created a PUBLIC branding endpoint GET /api/branding (no auth — school name/logo/motto are public) returning { schoolName, address, motto, logoUrl, principalName }. `logoUrl` = the configured logoDataUrl (data URL) or falls back to /school-logo.png.
+- Created a reusable SchoolLogo component (src/components/shell/school-logo.tsx): fetches /api/branding via TanStack Query (cached 5 min), renders the <img> (rounded, object-contain, white bg), and falls back to a GraduationCap icon if the image errors.
+- Replaced every GraduationCap placeholder with the SchoolLogo:
+  - src/components/views/login-screen.tsx: login page now shows the school logo (h-24 circle) + fetches branding for school name + motto. Removed the hardcoded GraduationCap.
+  - src/components/shell/shell-layout.tsx: Brand (sidebar), mobile header, and footer now use SchoolLogo (h-9 / h-7 / h-4).
+  - src/components/shell/app-shell.tsx: the loading splash now shows SchoolLogo (h-14) instead of the GraduationCap.
+  - The report-card-document.tsx already used settings.logoDataUrl (no change needed — it renders the saved logo).
+- Cleaned up unused eslint-disable directives + the unused GraduationCap import.
+- Browser-verified (agent-browser): login screen renders the school logo (500×500 data URL, naturalW=500 not broken); principal dashboard shell shows the logo in the sidebar + footer (3 instances); report card preview shows the logo in the header + "Class: JSS 1". `bun run lint` passes (0 errors, 0 warnings). Dev server healthy.
+- Screenshots: download/login-with-logo.png, download/report-card-with-logo.png.
+
+Stage Summary:
+- The school's actual logo now replaces the generic placeholder everywhere it appeared: login screen, app shell sidebar, mobile header, footer, loading splash, and report card header. The logo is sourced from the principal's School Settings (logoDataUrl) via a public /api/branding endpoint, with a static /school-logo.png fallback. If the principal uploads a new logo in Settings, it propagates app-wide automatically.

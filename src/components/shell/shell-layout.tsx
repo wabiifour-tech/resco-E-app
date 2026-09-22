@@ -3,8 +3,9 @@ import { useState, type ReactNode } from 'react'
 import { useAppStore } from '@/store/app-store'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
-import { GraduationCap, LogOut, Menu } from 'lucide-react'
+import { LogOut, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SchoolLogo } from '@/components/shell/school-logo'
 
 export type NavItem = {
   key: string
@@ -61,9 +62,7 @@ function NavList({
 function Brand({ subtitle }: { subtitle: string }) {
   return (
     <div className="flex items-center gap-2.5 px-4 py-4 border-b">
-      <div className="h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-        <GraduationCap className="h-5 w-5" />
-      </div>
+      <SchoolLogo className="h-9 w-9" />
       <div className="min-w-0">
         <p className="font-bold text-sm leading-tight truncate">RESCO eCard</p>
         <p className="text-[10px] text-muted-foreground leading-tight truncate">{subtitle}</p>
@@ -135,9 +134,7 @@ export function ShellLayout({
           </SheetContent>
         </Sheet>
         <div className="flex items-center gap-2">
-          <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-            <GraduationCap className="h-4 w-4" />
-          </div>
+          <SchoolLogo className="h-7 w-7" />
           <span className="font-bold text-sm">{title}</span>
         </div>
       </header>
@@ -155,7 +152,7 @@ export function ShellLayout({
           <div className="flex-1 p-4 md:p-6 max-w-[1400px] w-full mx-auto">{children}</div>
           <footer className="mt-auto border-t bg-background py-3 px-4 text-center text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
-              <GraduationCap className="h-3 w-3" />
+              <SchoolLogo className="h-4 w-4" />
               RESCO eCard · Redeemer&apos;s Schools and College, Owotoro · Excellence, Knowledge, and Wisdom
             </span>
           </footer>

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAppStore } from '@/store/app-store'
 import { api, ApiError } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
@@ -7,14 +8,30 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { GraduationCap, Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
+import { Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+
+type Branding = {
+  schoolName: string
+  address: string
+  motto: string
+  logoUrl: string
+  principalName: string | null
+}
 
 export function LoginScreen() {
   const setUser = useAppStore((s) => s.setUser)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Fetch public school branding so the login page shows the real school logo
+  // (instead of a generic placeholder) + the configured school name/motto.
+  const { data: branding } = useQuery<Branding>({
+    queryKey: ['branding'],
+    queryFn: () => api.get<Branding>('/api/branding'),
+    staleTime: 5 * 60 * 1000,
+  })
 
   useEffect(() => {
     document.title = 'RESCO eCard | Login'
@@ -39,21 +56,25 @@ export function LoginScreen() {
     }
   }
 
+  const schoolName = branding?.schoolName ?? "Redeemer's Schools and College"
+  const motto = branding?.motto ?? 'Excellence, Knowledge, and Wisdom'
+  const logoUrl = branding?.logoUrl ?? '/school-logo.png'
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-emerald-50 via-background to-amber-50">
       <main className="flex-1 flex items-center justify-center p-4 py-10">
         <div className="w-full max-w-md">
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="h-20 w-20 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg mb-4 ring-4 ring-emerald-100">
-              <GraduationCap className="h-10 w-10" />
+            <div className="h-24 w-24 rounded-full bg-white shadow-lg mb-4 ring-4 ring-emerald-100 flex items-center justify-center overflow-hidden">
+              <img
+                src={logoUrl}
+                alt={`${schoolName} logo`}
+                className="h-full w-full object-contain"
+              />
             </div>
             <h1 className="text-3xl font-bold tracking-tight">RESCO eCard</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Redeemer&apos;s Schools and College, Owotoro
-            </p>
-            <p className="text-xs text-muted-foreground/80 italic mt-1">
-              Excellence, Knowledge, and Wisdom
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">{schoolName}</p>
+            <p className="text-xs text-muted-foreground/80 italic mt-1">{motto}</p>
           </div>
 
           <Card className="shadow-xl border-border/60">
