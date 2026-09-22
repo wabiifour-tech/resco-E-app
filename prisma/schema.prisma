@@ -1,0 +1,211 @@
+// RESCO eCard - Academic Result & Report Card System
+// Redeemer's Schools and College, Owotoro
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users (Principal + Teachers) ───────────────────────────────────────────
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  name         String
+  passwordHash String
+  role         String      @default("TEACHER") // PRINCIPAL | TEACHER
+  active       Boolean     @default(true)
+  teacher      Teacher?
+  auditLogs    AuditLog[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+// ─── Teacher profile (1:1 with User) ───────────────────────────────────────
+model Teacher {
+  id              String              @id @default(cuid())
+  userId          String              @unique
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments    TeacherAssignment[]
+  results         Result[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+}
+
+// ─── Classes & Arms ─────────────────────────────────────────────────────────
+model Class {
+  id        String     @id @default(cuid())
+  name      String     @unique // JSS1, JSS2, SS1...
+  level     Int        @default(0) // ordering
+  arms      ClassArm[]
+  students  Student[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model ClassArm {
+  id                String              @id @default(cuid())
+  classId           String
+  class             Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name              String              // A, B, C...
+  fullName          String              @unique // JSS1A, JSS1B
+  students          Student[]
+  teacherAssignment TeacherAssignment[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+}
+
+// ─── Subjects ───────────────────────────────────────────────────────────────
+model Subject {
+  id        String              @id @default(cuid())
+  name      String              @unique
+  code      String?
+  assignments TeacherAssignment[]
+  results   Result[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+}
+
+// ─── Teacher → ClassArm + Subject assignment ─────────────────────────────────
+model TeacherAssignment {
+  id         String  @id @default(cuid())
+  teacherId  String
+  teacher    Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classArmId String
+  classArm   ClassArm @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([teacherId, classArmId, subjectId])
+}
+
+// ─── Students (records only - NO login) ─────────────────────────────────────
+model Student {
+  id              String   @id @default(cuid())
+  admissionNumber String   @unique
+  firstName       String
+  lastName        String
+  otherNames      String?
+  gender          String?  // MALE | FEMALE
+  classId         String
+  class           Class    @relation(fields: [classId], references: [id])
+  classArmId      String?
+  classArm        ClassArm? @relation(fields: [classArmId], references: [id])
+  active          Boolean  @default(true)
+  results         Result[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─── Academic Sessions & Terms ──────────────────────────────────────────────
+model AcademicSession {
+  id        String   @id @default(cuid())
+  name      String   @unique // 2026/2027
+  isActive  Boolean  @default(false)
+  terms     Term[]
+  results   Result[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Term {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   AcademicSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  name      String   // First Term, Second Term, Third Term
+  order     Int      // 1, 2, 3
+  isActive  Boolean  @default(false)
+  results   Result[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, name])
+}
+
+// ─── Results (the core) ──────────────────────────────────────────────────────
+// Status workflow: SAVED → SUBMITTED → (NEEDS_CORRECTION) → APPROVED (locked)
+// Reopen APPROVED → SUBMITTED
+model Result {
+  id                  String   @id @default(cuid())
+  studentId          String
+  student            Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  subjectId          String
+  subject            Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  sessionId          String
+  session            AcademicSession @relation(fields: [sessionId], references: [id])
+  termId             String
+  term               Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
+  classArmId         String   // snapshot for position calc
+  ca                 Int?     // 0-30
+  exam               Int?     // 0-70
+  total              Int?     // 0-100 (computed)
+  grade              String?
+  position           Int?
+  remarkId           String?
+  remark             Remark?  @relation(fields: [remarkId], references: [id])
+  status             String   @default("SAVED") // SAVED, SUBMITTED, NEEDS_CORRECTION, APPROVED
+  enteredByTeacherId String?
+  enteredBy          Teacher? @relation(fields: [enteredByTeacherId], references: [id])
+  approvedById       String?
+  approvedAt         DateTime?
+  lockedAt           DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([studentId, subjectId, sessionId, termId])
+  @@index([subjectId, classArmId, sessionId, termId])
+  @@index([studentId, sessionId, termId])
+}
+
+// ─── Configurable grading scale ─────────────────────────────────────────────
+model GradeBoundary {
+  id    String @id @default(cuid())
+  min   Int
+  max   Int
+  grade String
+  order Int    @default(0)
+}
+
+// ─── Predefined teacher remarks ─────────────────────────────────────────────
+model Remark {
+  id       String   @id @default(cuid())
+  category String   // Excellent Performance, Very Good, etc.
+  text     String
+  active   Boolean  @default(true)
+  results  Result[]
+  createdAt DateTime @default(now())
+}
+
+// ─── Audit log ──────────────────────────────────────────────────────────────
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  userName  String
+  userRole  String
+  action    String
+  context   String?  // JSON string with details
+  ipAddress String?
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+  @@index([userId])
+}
+
+// ─── School settings (singleton) ────────────────────────────────────────────
+model SchoolSetting {
+  id                String   @id @default("singleton")
+  schoolName        String   @default("Redeemer's Schools and College")
+  address           String   @default("Owotoro, Oyo State, Nigeria")
+  phone             String?
+  motto             String   @default("Excellence, Knowledge, and Wisdom")
+  logoDataUrl       String?  // base64 data URL for logo
+  principalName     String?
+  principalSignatureDataUrl String? // base64 data URL
+  currentSessionId  String?
+  currentTermId     String?
+  updatedAt         DateTime @updatedAt
+}
