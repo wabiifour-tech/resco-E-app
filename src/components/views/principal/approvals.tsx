@@ -82,15 +82,11 @@ type ResultRow = {
     otherNames: string | null
     gender: string | null
     classId: string
-    classArmId: string | null
   }
   subject: { id: string; name: string; code: string | null }
-  classArm: {
+  class: {
     id: string
     name: string
-    fullName: string
-    classId: string
-    class: { id: string; name: string; level: number }
   }
   term: { id: string; name: string; order: number }
   session: { id: string; name: string }
@@ -115,7 +111,7 @@ type ApprovalsResponse = {
   filters: {
     sessionId: string | null
     termId: string | null
-    classArmId: string | null
+    classId: string | null
     subjectId: string | null
     status: string
   }
@@ -132,7 +128,7 @@ type ClassItem = {
   id: string
   name: string
   level: number
-  arms: { id: string; name: string; fullName: string; classId: string }[]
+  category?: string | null
 }
 
 type SubjectItem = { id: string; name: string; code: string | null }
@@ -181,15 +177,14 @@ function statusBadge(status: ResultRow['status']) {
   }
 }
 
-// Group results by (classArmId + subjectId) so the principal can review a
+// Group results by (classId + subjectId) so the principal can review a
 // whole subject-class "result sheet" at once.
 function groupResults(rows: ResultRow[]) {
   const map = new Map<
     string,
     {
       key: string
-      classArmId: string
-      classArmName: string
+      classId: string
       className: string
       subjectId: string
       subjectName: string
@@ -198,13 +193,12 @@ function groupResults(rows: ResultRow[]) {
     }
   >()
   for (const r of rows) {
-    const k = `${r.classArmId}|${r.subjectId}`
+    const k = `${r.class.id}|${r.subject.id}`
     if (!map.has(k)) {
       map.set(k, {
         key: k,
-        classArmId: r.classArm.id,
-        classArmName: r.classArm.fullName,
-        className: r.classArm.class.name,
+        classId: r.class.id,
+        className: r.class.name,
         subjectId: r.subject.id,
         subjectName: r.subject.name,
         enteredByTeacherName: r.enteredByTeacherName ?? null,
@@ -221,7 +215,7 @@ function groupResults(rows: ResultRow[]) {
 async function fetchApprovals(params: {
   sessionId?: string
   termId?: string
-  classArmId?: string
+  classId?: string
   subjectId?: string
   status?: string
 }): Promise<ApprovalsResponse> {
@@ -345,7 +339,7 @@ function ReturnFormBody({
         <div className="flex justify-between gap-2">
           <span className="text-muted-foreground">Class</span>
           <span className="font-medium text-right">
-            {result.classArm.fullName}
+            {result.class.name}
           </span>
         </div>
         <div className="flex justify-between gap-2">
@@ -443,7 +437,7 @@ function ReopenDialog({
                 <span className="font-medium text-foreground">
                   {studentName(result)}
                 </span>{' '}
-                — {result.subject.name} ({result.classArm.fullName}) will be
+                — {result.subject.name} ({result.class.name}) will be
                 unlocked and set back to <span className="font-medium">Pending</span>.
                 The teacher will be able to edit and re-submit it. Approved
                 audit history is kept.
@@ -644,7 +638,7 @@ function ResultSheetGroup({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b bg-muted/40 px-4 py-3">
         <div className="min-w-0">
           <h3 className="font-semibold truncate">
-            {group.subjectName} — {group.classArmName}
+            {group.subjectName} — {group.className}
           </h3>
           <p className="text-xs text-muted-foreground truncate">
             {group.rows.length} student
@@ -844,7 +838,7 @@ export function PrincipalApprovals() {
   // Filter state (defaults filled in from /api/sessions + /api/settings)
   const [sessionId, setSessionId] = useState<string>('')
   const [termId, setTermId] = useState<string>('')
-  const [classArmId, setClassArmId] = useState<string>('ALL')
+  const [classId, setClassId] = useState<string>('ALL')
   const [subjectId, setSubjectId] = useState<string>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('SUBMITTED')
 
@@ -888,7 +882,7 @@ export function PrincipalApprovals() {
     effSession?.terms[0]?.id ||
     ''
 
-  // Classes (with arms) for the class-arm filter dropdown.
+  // Classes for the class filter dropdown.
   const classesQuery = useQuery<ClassItem[]>({
     queryKey: ['classes'],
     queryFn: async () => {
@@ -897,6 +891,15 @@ export function PrincipalApprovals() {
     },
     staleTime: 60_000,
   })
+
+  const classes = useMemo(
+    () =>
+      [...(classesQuery.data ?? [])].sort((a, b) => {
+        if (a.level !== b.level) return a.level - b.level
+        return a.name.localeCompare(b.name)
+      }),
+    [classesQuery.data],
+  )
 
   // Subjects dropdown
   const subjectsQuery = useQuery<SubjectItem[]>({
@@ -915,7 +918,7 @@ export function PrincipalApprovals() {
       'approvals',
       effSessionId,
       effTermId,
-      classArmId,
+      classId,
       subjectId,
       statusFilter,
     ],
@@ -923,7 +926,7 @@ export function PrincipalApprovals() {
       fetchApprovals({
         sessionId: effSessionId || undefined,
         termId: effTermId || undefined,
-        classArmId: classArmId !== 'ALL' ? classArmId : undefined,
+        classId: classId !== 'ALL' ? classId : undefined,
         subjectId: subjectId !== 'ALL' ? subjectId : undefined,
         status: statusFilter,
       }),
@@ -1017,7 +1020,6 @@ export function PrincipalApprovals() {
 
   const sessions = sessionsQuery.data ?? []
   const termsForSession = effSession?.terms ?? []
-  const classes = classesQuery.data ?? []
   const subjects = subjectsQuery.data ?? []
 
   const results = resultsQuery.data?.results ?? []
@@ -1166,22 +1168,20 @@ export function PrincipalApprovals() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="f-classarm" className="text-xs">
-                Class arm
+              <Label htmlFor="f-class" className="text-xs">
+                Class
               </Label>
-              <Select value={classArmId} onValueChange={setClassArmId}>
-                <SelectTrigger id="f-classarm" className="w-full min-h-[44px]">
+              <Select value={classId} onValueChange={setClassId}>
+                <SelectTrigger id="f-class" className="w-full min-h-[44px]">
                   <SelectValue placeholder="All classes" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All class arms</SelectItem>
-                  {classes.flatMap((c) =>
-                    c.arms.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.fullName}
-                      </SelectItem>
-                    )),
-                  )}
+                  <SelectItem value="ALL">All classes</SelectItem>
+                  {classes.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1223,7 +1223,7 @@ export function PrincipalApprovals() {
               </Select>
             </div>
           </div>
-          {(classArmId !== 'ALL' ||
+          {(classId !== 'ALL' ||
             subjectId !== 'ALL' ||
             statusFilter !== 'SUBMITTED') && (
             <div className="mt-3 flex items-center justify-between gap-2">
@@ -1233,8 +1233,8 @@ export function PrincipalApprovals() {
                   {statusFilter === 'ALL' ? 'all' : statusFilter}
                 </span>{' '}
                 results
-                {classArmId !== 'ALL' &&
-                  ` for ${classes.flatMap((c) => c.arms).find((a) => a.id === classArmId)?.fullName ?? ''}`}
+                {classId !== 'ALL' &&
+                  ` for ${classes.find((c) => c.id === classId)?.name ?? ''}`}
                 {subjectId !== 'ALL' &&
                   ` · ${subjects.find((s) => s.id === subjectId)?.name ?? ''}`}
                 .
@@ -1244,7 +1244,7 @@ export function PrincipalApprovals() {
                 size="sm"
                 className="h-9"
                 onClick={() => {
-                  setClassArmId('ALL')
+                  setClassId('ALL')
                   setSubjectId('ALL')
                   setStatusFilter('SUBMITTED')
                 }}

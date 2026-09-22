@@ -1,0 +1,1122 @@
+     1→'use client'
+     2→
+     3→import { useMemo, useState } from 'react'
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→import { toast } from 'sonner'
+     6→import {
+     7→  Loader2,
+     8→  Save,
+     9→  Send,
+    10→  Lock,
+    11→  CheckCircle2,
+    12→  AlertCircle,
+    13→  Info,
+    14→  Calculator,
+    15→} from 'lucide-react'
+    16→
+    17→import { Button } from '@/components/ui/button'
+    18→import { Card, CardContent } from '@/components/ui/card'
+    19→import { Input } from '@/components/ui/input'
+    20→import { Label } from '@/components/ui/label'
+    21→import { Badge } from '@/components/ui/badge'
+    22→import { Skeleton } from '@/components/ui/skeleton'
+    23→import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+    24→import {
+    25→  Table,
+    26→  TableBody,
+    27→  TableCell,
+    28→  TableHead,
+    29→  TableHeader,
+    30→  TableRow,
+    31→} from '@/components/ui/table'
+    32→import {
+    33→  Select,
+    34→  SelectContent,
+    35→  SelectGroup,
+    36→  SelectItem,
+    37→  SelectLabel,
+    38→  SelectTrigger,
+    39→  SelectValue,
+    40→} from '@/components/ui/select'
+    41→import { ApiError, api } from '@/lib/api-client'
+    42→
+    43→// ─── Types ────────────────────────────────────────────────────────────────────
+    44→
+    45→type Assignment = {
+    46→  id: string
+    47→  classId: string
+    48→  className: string
+    49→  subjectId: string
+    50→  subjectName: string
+    51→  subjectCode: string | null
+    52→}
+    53→
+    54→type Remark = {
+    55→  id: string
+    56→  category: string
+    57→  text: string
+    58→}
+    59→
+    60→type GradeBoundary = {
+    61→  id: string
+    62→  min: number
+    63→  max: number
+    64→  grade: string
+    65→  order: number
+    66→}
+    67→
+    68→type Bootstrap = {
+    69→  activeSession: {
+    70→    id: string
+    71→    name: string
+    72→    isActive: boolean
+    73→  } | null
+    74→  activeTerm: {
+    75→    id: string
+    76→    name: string
+    77→    order: number
+    78→    sessionId: string
+    79→    isActive: boolean
+    80→  } | null
+    81→  assignments: Assignment[]
+    82→  remarks: Remark[]
+    83→  gradeBoundaries: GradeBoundary[]
+    84→}
+    85→
+    86→type StudentRow = {
+    87→  id: string
+    88→  admissionNumber: string
+    89→  firstName: string
+    90→  lastName: string
+    91→  otherNames: string | null
+    92→  active: boolean
+    93→  class: { id: string; name: string } | null
+    94→}
+    95→
+    96→type ResultRow = {
+    97→  id: string
+    98→  studentId: string
+    99→  subjectId: string
+   100→  sessionId: string
+   101→  termId: string
+   102→  classId: string
+   103→  ca: number | null
+   104→  exam: number | null
+   105→  total: number | null
+   106→  grade: string | null
+   107→  position: number | null
+   108→  remarkId: string | null
+   109→  remark: { id: string; category: string; text: string } | null
+   110→  status: string
+   111→  priorTotals: { firstTerm: number | null; secondTerm: number | null }
+   112→  cumulative: number | null
+   113→}
+   114→
+   115→// ─── Helpers ──────────────────────────────────────────────────────────────────
+   116→
+   117→const CA_MAX = 30
+   118→const EXAM_MAX = 70
+   119→
+   120→function liveTotal(ca: string, exam: string): number | null {
+   121→  const c = ca === '' ? null : Number(ca)
+   122→  const e = exam === '' ? null : Number(exam)
+   123→  if (c == null || e == null || !Number.isFinite(c) || !Number.isFinite(e)) return null
+   124→  return c + e
+   125→}
+   126→
+   127→function liveGrade(total: number | null, boundaries: GradeBoundary[]): string | null {
+   128→  if (total == null || !Number.isFinite(total)) return null
+   129→  for (const b of boundaries) {
+   130→    if (total >= b.min && total <= b.max) return b.grade
+   131→  }
+   132→  return boundaries[boundaries.length - 1]?.grade ?? 'F'
+   133→}
+   134→
+   135→function validateInput(ca: string, exam: string): string | null {
+   136→  if (ca === '' || exam === '') return null // empty is OK (not yet entered)
+   137→  const c = Number(ca)
+   138→  const e = Number(exam)
+   139→  if (!Number.isFinite(c) || !Number.isFinite(e)) return 'Scores must be valid numbers'
+   140→  if (c < 0 || c > CA_MAX) return `CA must be between 0 and ${CA_MAX}`
+   141→  if (e < 0 || e > EXAM_MAX) return `Examination must be between 0 and ${EXAM_MAX}`
+   142→  return null
+   143→}
+   144→
+   145→function liveCumulative(
+   146→  termOrder: number,
+   147→  termTotal: number | null,
+   148→  priors: { firstTerm: number | null; secondTerm: number | null },
+   149→): number | null {
+   150→  if (termTotal == null || !Number.isFinite(termTotal)) return null
+   151→  if (termOrder === 1) return termTotal
+   152→  if (termOrder === 2) {
+   153→    if (priors.firstTerm == null) return null
+   154→    return Math.round(((priors.firstTerm + termTotal) / 2) * 100) / 100
+   155→  }
+   156→  if (termOrder === 3) {
+   157→    if (priors.firstTerm == null || priors.secondTerm == null) return null
+   158→    return (
+   159→      Math.round(((priors.firstTerm + priors.secondTerm + termTotal) / 3) * 100) / 100
+   160→    )
+   161→  }
+   162→  return null
+   163→}
+   164→
+   165→function statusBadge(status: string) {
+   166→  switch (status) {
+   167→    case 'SAVED':
+   168→      return <Badge variant="secondary">Saved</Badge>
+   169→    case 'SUBMITTED':
+   170→      return (
+   171→        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-transparent">
+   172→          Submitted
+   173→        </Badge>
+   174→      )
+   175→    case 'APPROVED':
+   176→      return (
+   177→        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-transparent">
+   178→          Approved
+   179→        </Badge>
+   180→      )
+   181→    case 'NEEDS_CORRECTION':
+   182→      return <Badge variant="destructive">Needs correction</Badge>
+   183→    default:
+   184→      return <Badge variant="outline">{status}</Badge>
+   185→  }
+   186→}
+   187→
+   188→function ordinal(n: number | null): string {
+   189→  if (!n || n <= 0) return '—'
+   190→  const s = ['th', 'st', 'nd', 'rd']
+   191→  const v = n % 100
+   192→  return n + (s[(v - 20) % 10] || s[v] || s[0])
+   193→}
+   194→
+   195→// ─── API helpers ──────────────────────────────────────────────────────────────
+   196→
+   197→async function fetchBootstrap(): Promise<Bootstrap> {
+   198→  return api.get<Bootstrap>('/api/results/bootstrap')
+   199→}
+   200→
+   201→async function fetchStudents(classId: string): Promise<StudentRow[]> {
+   202→  const r = await api.get<{ students: StudentRow[]; count: number }>(
+   203→    '/api/results/students',
+   204→    { query: { classId, active: 'true' } },
+   205→  )
+   206→  return r.students
+   207→}
+   208→
+   209→async function fetchResults(params: {
+   210→  sessionId: string
+   211→  termId: string
+   212→  classId: string
+   213→  subjectId: string
+   214→}): Promise<ResultRow[]> {
+   215→  const r = await api.get<{ results: ResultRow[]; count: number }>('/api/results', {
+   216→    query: params,
+   217→  })
+   218→  return r.results
+   219→}
+   220→
+   221→type SaveBody = {
+   222→  studentId: string
+   223→  subjectId: string
+   224→  sessionId: string
+   225→  termId: string
+   226→  classId: string
+   227→  ca: number
+   228→  exam: number
+   229→  remarkId: string | null
+   230→}
+   231→
+   232→async function saveResult(body: SaveBody) {
+   233→  return api.post<{ result: ResultRow }>('/api/results', body)
+   234→}
+   235→
+   236→async function submitBatch(body: {
+   237→  resultIds?: string[]
+   238→  studentIds?: string[]
+   239→  subjectId?: string
+   240→  classId?: string
+   241→  sessionId?: string
+   242→  termId?: string
+   243→}) {
+   244→  return api.post<{
+   245→    submitted: { id: string; status: string }[]
+   246→    rejected: { id: string; reason: string }[]
+   247→    submittedCount: number
+   248→    rejectedCount: number
+   249→  }>('/api/results/submit', body)
+   250→}
+   251→
+   252→// ─── Row state (per student) ──────────────────────────────────────────────────
+   253→
+   254→type RowState = {
+   255→  studentId: string
+   256→  ca: string
+   257→  exam: string
+   258→  remarkId: string | null
+   259→  // server-side snapshot (last saved)
+   260→  serverCa: number | null
+   261→  serverExam: number | null
+   262→  serverRemarkId: string | null
+   263→  status: string
+   264→  position: number | null
+   265→  priorTotals: { firstTerm: number | null; secondTerm: number | null }
+   266→  resultId: string | null
+   267→}
+   268→
+   269→// ─── Main view ────────────────────────────────────────────────────────────────
+   270→
+   271→export function TeacherResultsEntry() {
+   272→  const qc = useQueryClient()
+   273→  const [assignmentId, setAssignmentId] = useState<string>('')
+   274→
+   275→  // Bootstrap — assignments, active session/term, remarks, grade boundaries
+   276→  const { data: boot, isLoading: bootLoading } = useQuery({
+   277→    queryKey: ['results-bootstrap'],
+   278→    queryFn: fetchBootstrap,
+   279→  })
+   280→
+   281→  const activeSession = boot?.activeSession ?? null
+   282→  const activeTerm = boot?.activeTerm ?? null
+   283→  const assignments = boot?.assignments ?? []
+   284→  const remarks = boot?.remarks ?? []
+   285→  const boundaries = boot?.gradeBoundaries ?? []
+   286→
+   287→  const selectedAssignment = useMemo(
+   288→    () => assignments.find((a) => a.id === assignmentId) ?? null,
+   289→    [assignments, assignmentId],
+   290→  )
+   291→
+   292→  // Students list
+   293→  const studentsQuery = useQuery({
+   294→    queryKey: ['results-students', selectedAssignment?.classId],
+   295→    queryFn: () => fetchStudents(selectedAssignment!.classId),
+   296→    enabled: !!selectedAssignment?.classId && !!activeSession && !!activeTerm,
+   297→  })
+   298→
+   299→  // Existing results for this session/term/class/subject
+   300→  const resultsQuery = useQuery({
+   301→    queryKey: [
+   302→      'results',
+   303→      activeSession?.id,
+   304→      activeTerm?.id,
+   305→      selectedAssignment?.classId,
+   306→      selectedAssignment?.subjectId,
+   307→    ],
+   308→    queryFn: () =>
+   309→      fetchResults({
+   310→        sessionId: activeSession!.id,
+   311→        termId: activeTerm!.id,
+   312→        classId: selectedAssignment!.classId,
+   313→        subjectId: selectedAssignment!.subjectId,
+   314→      }),
+   315→    enabled:
+   316→      !!selectedAssignment?.classId &&
+   317→      !!selectedAssignment?.subjectId &&
+   318→      !!activeSession &&
+   319→      !!activeTerm,
+   320→  })
+   321→
+   322→  const students = studentsQuery.data ?? []
+   323→  const results = resultsQuery.data ?? []
+   324→
+   325→  // Build per-student row state from students + results
+   326→  const rowStates = useMemo<RowState[]>(() => {
+   327→    return students.map((s) => {
+   328→      const r = results.find((rr) => rr.studentId === s.id)
+   329→      return {
+   330→        studentId: s.id,
+   331→        ca: r?.ca != null ? String(r.ca) : '',
+   332→        exam: r?.exam != null ? String(r.exam) : '',
+   333→        remarkId: r?.remarkId ?? null,
+   334→        serverCa: r?.ca ?? null,
+   335→        serverExam: r?.exam ?? null,
+   336→        serverRemarkId: r?.remarkId ?? null,
+   337→        status: r?.status ?? 'NEW',
+   338→        position: r?.position ?? null,
+   339→        priorTotals: r?.priorTotals ?? { firstTerm: null, secondTerm: null },
+   340→        resultId: r?.id ?? null,
+   341→      }
+   342→    })
+   343→  }, [students, results])
+   344→
+   345→  // Per-row draft overrides (so user can edit before saving)
+   346→  const [drafts, setDrafts] = useState<Record<string, { ca: string; exam: string; remarkId: string | null }>>({})
+   347→
+   348→  // Reset drafts whenever the underlying data changes
+   349→  // (use a key based on result snapshot signature to reset cleanly)
+   350→  const draftSignature = rowStates
+   351→    .map((r) => `${r.studentId}:${r.serverCa ?? ''}:${r.serverExam ?? ''}:${r.serverRemarkId ?? ''}`)
+   352→    .join('|')
+   353→  const [lastSig, setLastSig] = useState('')
+   354→  if (draftSignature !== lastSig) {
+   355→    setLastSig(draftSignature)
+   356→    setDrafts({})
+   357→  }
+   358→
+   359→  function getDraft(studentId: string, fallback: RowState) {
+   360→    const d = drafts[studentId]
+   361→    if (d) return d
+   362→    return { ca: fallback.ca, exam: fallback.exam, remarkId: fallback.remarkId }
+   363→  }
+   364→
+   365→  function setDraft(studentId: string, patch: Partial<{ ca: string; exam: string; remarkId: string | null }>) {
+   366→    setDrafts((prev) => {
+   367→      const existing = prev[studentId] ?? {
+   368→        ca: rowStates.find((r) => r.studentId === studentId)?.ca ?? '',
+   369→        exam: rowStates.find((r) => r.studentId === studentId)?.exam ?? '',
+   370→        remarkId: rowStates.find((r) => r.studentId === studentId)?.remarkId ?? null,
+   371→      }
+   372→      return { ...prev, [studentId]: { ...existing, ...patch } }
+   373→    })
+   374→  }
+   375→
+   376→  // Save mutation (single row)
+   377→  const saveMutation = useMutation({
+   378→    mutationFn: (vars: {
+   379→      row: RowState
+   380→      ca: string
+   381→      exam: string
+   382→      remarkId: string | null
+   383→    }) => {
+   384→      if (!selectedAssignment || !activeSession || !activeTerm) {
+   385→        throw new Error('Missing assignment, session, or term')
+   386→      }
+   387→      const ca = Number(vars.ca)
+   388→      const exam = Number(vars.exam)
+   389→      const body: SaveBody = {
+   390→        studentId: vars.row.studentId,
+   391→        subjectId: selectedAssignment.subjectId,
+   392→        sessionId: activeSession.id,
+   393→        termId: activeTerm.id,
+   394→        classId: selectedAssignment.classId,
+   395→        ca,
+   396→        exam,
+   397→        remarkId: vars.remarkId,
+   398→      }
+   399→      return saveResult(body)
+   400→    },
+   401→    onSuccess: () => {
+   402→      toast.success('Result saved')
+   403→      qc.invalidateQueries({
+   404→        queryKey: ['results'],
+   405→      })
+   406→    },
+   407→    onError: (err: unknown) => {
+   408→      const msg =
+   409→        err instanceof ApiError
+   410→          ? err.message
+   411→          : err instanceof Error
+   412→            ? err.message
+   413→            : 'Failed to save'
+   414→      toast.error(msg)
+   415→    },
+   416→  })
+   417→
+   418→  // Submit mutation (batch — either all drafts OR by studentIds)
+   419→  const submitMutation = useMutation({
+   420→    mutationFn: (vars: { studentIds: string[]; subjectId: string; classId: string; sessionId: string; termId: string }) => {
+   421→      return submitBatch(vars)
+   422→    },
+   423→    onSuccess: (data) => {
+   424→      if (data.submittedCount > 0) {
+   425→        toast.success(`${data.submittedCount} result(s) submitted`)
+   426→      }
+   427→      if (data.rejectedCount > 0) {
+   428→        toast.warning(`${data.rejectedCount} result(s) could not be submitted`)
+   429→      }
+   430→      qc.invalidateQueries({ queryKey: ['results'] })
+   431→    },
+   432→    onError: (err: unknown) => {
+   433→      const msg =
+   434→        err instanceof ApiError
+   435→          ? err.message
+   436→          : err instanceof Error
+   437→            ? err.message
+   438→            : 'Failed to submit'
+   439→      toast.error(msg)
+   440→    },
+   441→  })
+   442→
+   443→  function handleSaveRow(row: RowState) {
+   444→    const draft = getDraft(row.studentId, row)
+   445→    const err = validateInput(draft.ca, draft.exam)
+   446→    if (err) return toast.error(err)
+   447→    if (draft.ca === '' || draft.exam === '') {
+   448→      return toast.error('Enter both CA and Examination scores')
+   449→    }
+   450→    saveMutation.mutate({
+   451→      row,
+   452→      ca: draft.ca,
+   453→      exam: draft.exam,
+   454→      remarkId: draft.remarkId,
+   455→    })
+   456→  }
+   457→
+   458→  function handleSaveAll() {
+   459→    const editable = rowStates.filter((r) => r.status !== 'SUBMITTED' && r.status !== 'APPROVED')
+   460→    if (editable.length === 0) return toast.info('Nothing to save')
+   461→
+   462→    // Validate all
+   463→    for (const r of editable) {
+   464→      const d = getDraft(r.studentId, r)
+   465→      const err = validateInput(d.ca, d.exam)
+   466→      if (err) return toast.error(`Row error: ${err}`)
+   467→      if (d.ca === '' || d.exam === '') {
+   468→        return toast.error('Enter both CA and Examination for every student')
+   469→      }
+   470→    }
+   471→    // Save one by one (awaitable)
+   472→    Promise.all(
+   473→      editable.map((r) => {
+   474→        const d = getDraft(r.studentId, r)
+   475→        return saveMutation.mutateAsync({ row: r, ca: d.ca, exam: d.exam, remarkId: d.remarkId })
+   476→      }),
+   477→    )
+   478→      .then(() => toast.success(`Saved ${editable.length} result(s)`))
+   479→      .catch((e) => {
+   480→        const msg = e instanceof ApiError ? e.message : 'Some saves failed'
+   481→        toast.error(msg)
+   482→      })
+   483→  }
+   484→
+   485→  function handleSubmitAll() {
+   486→    if (!selectedAssignment || !activeSession || !activeTerm) return
+   487→    const editable = rowStates.filter(
+   488→      (r) =>
+   489→        (r.status === 'SAVED' || r.status === 'NEEDS_CORRECTION') &&
+   490→        r.serverCa != null &&
+   491→        r.serverExam != null,
+   492→    )
+   493→    if (editable.length === 0) {
+   494→      return toast.info('Save at least one result before submitting')
+   495→    }
+   496→    submitMutation.mutate({
+   497→      studentIds: editable.map((r) => r.studentId),
+   498→      subjectId: selectedAssignment.subjectId,
+   499→      classId: selectedAssignment.classId,
+   500→      sessionId: activeSession.id,
+   501→      termId: activeTerm.id,
+   502→    })
+   503→  }
+   504→
+   505→  function handleSubmitRow(row: RowState) {
+   506→    if (!selectedAssignment || !activeSession || !activeTerm) return
+   507→    if (row.status !== 'SAVED' && row.status !== 'NEEDS_CORRECTION') return
+   508→    if (row.serverCa == null || row.serverExam == null) {
+   509→      return toast.error('Save the result first')
+   510→    }
+   511→    submitMutation.mutate({
+   512→      studentIds: [row.studentId],
+   513→      subjectId: selectedAssignment.subjectId,
+   514→      classId: selectedAssignment.classId,
+   515→      sessionId: activeSession.id,
+   516→      termId: activeTerm.id,
+   517→    })
+   518→  }
+   519→
+   520→  // ─── Render ──────────────────────────────────────────────────────────────────
+   521→
+   522→  if (bootLoading) {
+   523→    return (
+   524→      <div className="space-y-4">
+   525→        <div>
+   526→          <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
+   527→          <p className="text-sm text-muted-foreground mt-1">Loading…</p>
+   528→        </div>
+   529→        <Card>
+   530→          <CardContent className="p-4 space-y-3">
+   531→            <Skeleton className="h-10 w-full" />
+   532→            <Skeleton className="h-32 w-full" />
+   533→          </CardContent>
+   534→        </Card>
+   535→      </div>
+   536→    )
+   537→  }
+   538→
+   539→  if (!activeSession || !activeTerm) {
+   540→    return (
+   541→      <div className="space-y-4">
+   542→        <div>
+   543→          <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
+   544→          <p className="text-sm text-muted-foreground mt-1">
+   545→            Pick a class and subject to enter results for the active term.
+   546→          </p>
+   547→        </div>
+   548→        <Alert>
+   549→          <AlertCircle className="h-4 w-4" />
+   550→          <AlertTitle>No active academic session/term</AlertTitle>
+   551→          <AlertDescription>
+   552→            The principal must set the current academic session and term before you can enter results.
+   553→          </AlertDescription>
+   554→        </Alert>
+   555→      </div>
+   556→    )
+   557→  }
+   558→
+   559→  if (assignments.length === 0) {
+   560→    return (
+   561→      <div className="space-y-4">
+   562→        <div>
+   563→          <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
+   564→          <p className="text-sm text-muted-foreground mt-1">
+   565→            Pick a class and subject to enter results for the active term.
+   566→          </p>
+   567→        </div>
+   568→        <Alert>
+   569→          <Info className="h-4 w-4" />
+   570→          <AlertTitle>No assignments yet</AlertTitle>
+   571→          <AlertDescription>
+   572→            You have not been assigned to any class + subject. Ask the principal
+   573→            to assign you before you can enter results.
+   574→          </AlertDescription>
+   575→        </Alert>
+   576→      </div>
+   577→    )
+   578→  }
+   579→
+   580→  const termOrder = activeTerm.order
+   581→  const showFirstTermCol = termOrder >= 2
+   582→  const showSecondTermCol = termOrder >= 3
+   583→  const showCumulativeCol = termOrder >= 2
+   584→
+   585→  return (
+   586→    <div className="space-y-4">
+   587→      <div>
+   588→        <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
+   589→        <p className="text-sm text-muted-foreground mt-1">
+   590→          Pick a class and subject to enter results for the active term.
+   591→        </p>
+   592→      </div>
+   593→
+   594→      {/* Context banner */}
+   595→      <Card className="border-emerald-500/40 bg-emerald-500/5">
+   596→        <CardContent className="py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+   597→          <span className="text-muted-foreground">Active:</span>
+   598→          <span className="font-semibold">
+   599→            {activeSession.name} — {activeTerm.name}
+   600→          </span>
+   601→          <Badge variant="outline">CA / {CA_MAX}</Badge>
+   602→          <Badge variant="outline">Exam / {EXAM_MAX}</Badge>
+   603→          <Badge variant="outline">Total / 100</Badge>
+   604→        </CardContent>
+   605→      </Card>
+   606→
+   607→      {/* Assignment selector */}
+   608→      <Card>
+   609→        <CardContent className="p-4">
+   610→          <div className="space-y-2">
+   611→            <Label htmlFor="assignment-select">Class + Subject</Label>
+   612→            <Select value={assignmentId} onValueChange={setAssignmentId}>
+   613→              <SelectTrigger id="assignment-select" className="w-full">
+   614→                <SelectValue placeholder="Select a class + subject to enter results" />
+   615→              </SelectTrigger>
+   616→              <SelectContent>
+   617→                {assignments.map((a) => (
+   618→                  <SelectItem key={a.id} value={a.id}>
+   619→                    {a.className} — {a.subjectName}
+   620→                  </SelectItem>
+   621→                ))}
+   622→              </SelectContent>
+   623→            </Select>
+   624→          </div>
+   625→        </CardContent>
+   626→      </Card>
+   627→
+   628→      {selectedAssignment && (
+   629→        <>
+   630→          {/* Toolbar */}
+   631→          <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+   632→            <div className="text-sm text-muted-foreground">
+   633→              {studentsQuery.isLoading || resultsQuery.isLoading ? (
+   634→                <span className="inline-flex items-center gap-2">
+   635→                  <Loader2 className="h-3 w-3 animate-spin" /> loading students…
+   636→                </span>
+   637→              ) : (
+   638→                <span>
+   639→                  {students.length} student{students.length === 1 ? '' : 's'} in{' '}
+   640→                  {selectedAssignment.className}
+   641→                </span>
+   642→              )}
+   643→            </div>
+   644→            <div className="flex gap-2">
+   645→              <Button
+   646→                variant="secondary"
+   647→                onClick={handleSaveAll}
+   648→                disabled={
+   649→                  saveMutation.isPending ||
+   650→                  studentsQuery.isLoading ||
+   651→                  resultsQuery.isLoading ||
+   652→                  rowStates.length === 0
+   653→                }
+   654→              >
+   655→                {saveMutation.isPending ? (
+   656→                  <Loader2 className="h-4 w-4 animate-spin" />
+   657→                ) : (
+   658→                  <Save className="h-4 w-4" />
+   659→                )}
+   660→                Save all
+   661→              </Button>
+   662→              <Button
+   663→                onClick={handleSubmitAll}
+   664→                disabled={
+   665→                  submitMutation.isPending ||
+   666→                  studentsQuery.isLoading ||
+   667→                  resultsQuery.isLoading ||
+   668→                  rowStates.length === 0
+   669→                }
+   670→              >
+   671→                {submitMutation.isPending ? (
+   672→                  <Loader2 className="h-4 w-4 animate-spin" />
+   673→                ) : (
+   674→                  <Send className="h-4 w-4" />
+   675→                )}
+   676→                Submit all
+   677→              </Button>
+   678→            </div>
+   679→          </div>
+   680→
+   681→          {/* Term-2 / Term-3 info banner */}
+   682→          {(showFirstTermCol || showSecondTermCol) && (
+   683→            <Alert>
+   684→              <Calculator className="h-4 w-4" />
+   685→              <AlertTitle>{activeTerm.name} — cumulative calculation</AlertTitle>
+   686→              <AlertDescription>
+   687→                {termOrder === 2 && (
+   688→                  <>
+   689→                    You only enter Second Term CA + Exam. The system auto-retrieves the
+   690→                    student&apos;s First Term total. Cumulative = (1st + 2nd) ÷ 2.
+   691→                  </>
+   692→                )}
+   693→                {termOrder === 3 && (
+   694→                  <>
+   695→                    You only enter Third Term CA + Exam. The system auto-retrieves both
+   696→                    First and Second Term totals. Cumulative = (1st + 2nd + 3rd) ÷ 3.
+   697→                  </>
+   698→                )}
+   699→              </AlertDescription>
+   700→            </Alert>
+   701→          )}
+   702→
+   703→          {/* Empty / loading / table */}
+   704→          {studentsQuery.isLoading || resultsQuery.isLoading ? (
+   705→            <Card>
+   706→              <CardContent className="p-4 space-y-3">
+   707→                {Array.from({ length: 5 }).map((_, i) => (
+   708→                  <Skeleton key={i} className="h-12 w-full" />
+   709→                ))}
+   710→              </CardContent>
+   711→            </Card>
+   712→          ) : rowStates.length === 0 ? (
+   713→            <Card>
+   714→              <CardContent className="p-10 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
+   715→                <p className="text-sm">No active students in this class.</p>
+   716→              </CardContent>
+   717→            </Card>
+   718→          ) : (
+   719→            <>
+   720→              {/* Desktop table — hidden on mobile */}
+   721→              <Card className="hidden md:block">
+   722→                <CardContent className="p-0">
+   723→                  <div className="overflow-x-auto">
+   724→                    <Table>
+   725→                      <TableHeader>
+   726→                        <TableRow>
+   727→                          <TableHead className="min-w-[180px]">Student</TableHead>
+   728→                          <TableHead className="min-w-[80px]">CA<br /><span className="text-xs font-normal text-muted-foreground">/ {CA_MAX}</span></TableHead>
+   729→                          <TableHead className="min-w-[80px]">Exam<br /><span className="text-xs font-normal text-muted-foreground">/ {EXAM_MAX}</span></TableHead>
+   730→                          <TableHead className="min-w-[60px]">Total</TableHead>
+   731→                          <TableHead className="min-w-[60px]">Grade</TableHead>
+   732→                          <TableHead className="min-w-[60px]">Pos.</TableHead>
+   733→                          {showFirstTermCol && (
+   734→                            <TableHead className="min-w-[80px]">1st Term</TableHead>
+   735→                          )}
+   736→                          {showSecondTermCol && (
+   737→                            <TableHead className="min-w-[80px]">2nd Term</TableHead>
+   738→                          )}
+   739→                          {showCumulativeCol && (
+   740→                            <TableHead className="min-w-[80px]">Cumulative</TableHead>
+   741→                          )}
+   742→                          <TableHead className="min-w-[220px]">Remark</TableHead>
+   743→                          <TableHead className="min-w-[90px]">Status</TableHead>
+   744→                          <TableHead className="text-right min-w-[180px]">Actions</TableHead>
+   745→                        </TableRow>
+   746→                      </TableHeader>
+   747→                      <TableBody>
+   748→                        {rowStates.map((row) => {
+   749→                          const draft = getDraft(row.studentId, row)
+   750→                          const total = liveTotal(draft.ca, draft.exam)
+   751→                          const grade = liveGrade(total, boundaries)
+   752→                          const cumulative = liveCumulative(termOrder, total, row.priorTotals)
+   753→                          const isLocked =
+   754→                            row.status === 'SUBMITTED' || row.status === 'APPROVED'
+   755→                          const inputErr = validateInput(draft.ca, draft.exam)
+   756→                          return (
+   757→                            <TableRow key={row.studentId}>
+   758→                              <TableCell>
+   759→                                <div className="font-medium">
+   760→                                  {[row.studentId && students.find((s) => s.id === row.studentId)?.firstName, students.find((s) => s.id === row.studentId)?.otherNames, students.find((s) => s.id === row.studentId)?.lastName].filter(Boolean).join(' ')}
+   761→                                </div>
+   762→                                <div className="text-xs font-mono text-muted-foreground">
+   763→                                  {students.find((s) => s.id === row.studentId)?.admissionNumber}
+   764→                                </div>
+   765→                              </TableCell>
+   766→                              <TableCell>
+   767→                                <Input
+   768→                                  type="number"
+   769→                                  inputMode="decimal"
+   770→                                  min={0}
+   771→                                  max={CA_MAX}
+   772→                                  value={draft.ca}
+   773→                                  disabled={isLocked}
+   774→                                  onChange={(e) =>
+   775→                                    setDraft(row.studentId, { ca: e.target.value })
+   776→                                  }
+   777→                                  className="w-20 h-11"
+   778→                                  aria-label={`CA for student ${row.studentId}`}
+   779→                                />
+   780→                              </TableCell>
+   781→                              <TableCell>
+   782→                                <Input
+   783→                                  type="number"
+   784→                                  inputMode="decimal"
+   785→                                  min={0}
+   786→                                  max={EXAM_MAX}
+   787→                                  value={draft.exam}
+   788→                                  disabled={isLocked}
+   789→                                  onChange={(e) =>
+   790→                                    setDraft(row.studentId, { exam: e.target.value })
+   791→                                  }
+   792→                                  className="w-20 h-11"
+   793→                                  aria-label={`Exam for student ${row.studentId}`}
+   794→                                />
+   795→                              </TableCell>
+   796→                              <TableCell className="tabular-nums font-semibold">
+   797→                                {total ?? '—'}
+   798→                              </TableCell>
+   799→                              <TableCell>
+   800→                                {grade ? <Badge variant="outline">{grade}</Badge> : '—'}
+   801→                              </TableCell>
+   802→                              <TableCell className="tabular-nums">
+   803→                                {ordinal(row.position)}
+   804→                              </TableCell>
+   805→                              {showFirstTermCol && (
+   806→                                <TableCell className="tabular-nums text-muted-foreground">
+   807→                                  {row.priorTotals.firstTerm ?? '—'}
+   808→                                </TableCell>
+   809→                              )}
+   810→                              {showSecondTermCol && (
+   811→                                <TableCell className="tabular-nums text-muted-foreground">
+   812→                                  {row.priorTotals.secondTerm ?? '—'}
+   813→                                </TableCell>
+   814→                              )}
+   815→                              {showCumulativeCol && (
+   816→                                <TableCell className="tabular-nums font-semibold">
+   817→                                  {cumulative ?? '—'}
+   818→                                </TableCell>
+   819→                              )}
+   820→                              <TableCell>
+   821→                                <Select
+   822→                                  value={draft.remarkId ?? '__none__'}
+   823→                                  onValueChange={(v) =>
+   824→                                    setDraft(row.studentId, {
+   825→                                      remarkId: v === '__none__' ? null : v,
+   826→                                    })
+   827→                                  }
+   828→                                  disabled={isLocked}
+   829→                                >
+   830→                                  <SelectTrigger className="w-full h-11" aria-label={`Remark for student ${row.studentId}`}>
+   831→                                    <SelectValue placeholder="No remark" />
+   832→                                  </SelectTrigger>
+   833→                                  <SelectContent>
+   834→                                    <SelectItem value="__none__">No remark</SelectItem>
+   835→                                    <SelectGroup>
+   836→                                      {Object.entries(
+   837→                                        remarks.reduce<Record<string, Remark[]>>((acc, r) => {
+   838→                                          ;(acc[r.category] ||= []).push(r)
+   839→                                          return acc
+   840→                                        }, {}),
+   841→                                      ).map(([cat, items]) => (
+   842→                                        <SelectGroup key={cat}>
+   843→                                          <SelectLabel>{cat}</SelectLabel>
+   844→                                          {items.map((r) => (
+   845→                                            <SelectItem key={r.id} value={r.id}>
+   846→                                              {r.text.length > 50 ? r.text.slice(0, 47) + '…' : r.text}
+   847→                                            </SelectItem>
+   848→                                          ))}
+   849→                                        </SelectGroup>
+   850→                                      ))}
+   851→                                    </SelectGroup>
+   852→                                  </SelectContent>
+   853→                                </Select>
+   854→                              </TableCell>
+   855→                              <TableCell>
+   856→                                {row.status === 'NEW' ? (
+   857→                                  <Badge variant="outline">New</Badge>
+   858→                                ) : (
+   859→                                  statusBadge(row.status)
+   860→                                )}
+   861→                              </TableCell>
+   862→                              <TableCell className="text-right">
+   863→                                <div className="flex justify-end gap-1">
+   864→                                  {inputErr && (
+   865→                                    <span className="text-xs text-destructive self-center mr-1">
+   866→                                      {inputErr}
+   867→                                    </span>
+   868→                                  )}
+   869→                                  <Button
+   870→                                    size="sm"
+   871→                                    variant="secondary"
+   872→                                    onClick={() => handleSaveRow(row)}
+   873→                                    disabled={isLocked || saveMutation.isPending}
+   874→                                  >
+   875→                                    {saveMutation.isPending &&
+   876→                                      saveMutation.variables?.row.studentId === row.studentId ? (
+   877→                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   878→                                      ) : (
+   879→                                        <Save className="h-3.5 w-3.5" />
+   880→                                      )}
+   881→                                    Save
+   882→                                  </Button>
+   883→                                  <Button
+   884→                                    size="sm"
+   885→                                    onClick={() => handleSubmitRow(row)}
+   886→                                    disabled={
+   887→                                      isLocked ||
+   888→                                      row.status === 'NEW' ||
+   889→                                      submitMutation.isPending
+   890→                                    }
+   891→                                  >
+   892→                                    {submitMutation.isPending &&
+   893→                                    submitMutation.variables?.studentIds?.[0] === row.studentId ? (
+   894→                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+   895→                                    ) : (
+   896→                                      <Send className="h-3.5 w-3.5" />
+   897→                                    )}
+   898→                                    Submit
+   899→                                  </Button>
+   900→                                </div>
+   901→                              </TableCell>
+   902→                            </TableRow>
+   903→                          )
+   904→                        })}
+   905→                      </TableBody>
+   906→                    </Table>
+   907→                  </div>
+   908→                </CardContent>
+   909→              </Card>
+   910→
+   911→              {/* Mobile cards — block on mobile, hidden on >=md */}
+   912→              <div className="md:hidden space-y-3">
+   913→                {rowStates.map((row) => {
+   914→                  const draft = getDraft(row.studentId, row)
+   915→                  const total = liveTotal(draft.ca, draft.exam)
+   916→                  const grade = liveGrade(total, boundaries)
+   917→                  const cumulative = liveCumulative(termOrder, total, row.priorTotals)
+   918→                  const isLocked =
+   919→                    row.status === 'SUBMITTED' || row.status === 'APPROVED'
+   920→                  const inputErr = validateInput(draft.ca, draft.exam)
+   921→                  const student = students.find((s) => s.id === row.studentId)
+   922→                  const fullName = student
+   923→                    ? [student.firstName, student.otherNames, student.lastName].filter(Boolean).join(' ')
+   924→                    : ''
+   925→                  return (
+   926→                    <Card key={row.studentId}>
+   927→                      <CardContent className="p-4 space-y-3">
+   928→                        <div className="flex items-start justify-between gap-2">
+   929→                          <div>
+   930→                            <p className="font-medium">{fullName}</p>
+   931→                            <p className="text-xs font-mono text-muted-foreground">
+   932→                              {student?.admissionNumber}
+   933→                            </p>
+   934→                          </div>
+   935→                          {row.status === 'NEW' ? (
+   936→                            <Badge variant="outline">New</Badge>
+   937→                          ) : (
+   938→                            statusBadge(row.status)
+   939→                          )}
+   940→                        </div>
+   941→
+   942→                        <div className="grid grid-cols-2 gap-3">
+   943→                          <div className="space-y-1">
+   944→                            <Label htmlFor={`ca-${row.studentId}`} className="text-xs">
+   945→                              CA / {CA_MAX}
+   946→                            </Label>
+   947→                            <Input
+   948→                              id={`ca-${row.studentId}`}
+   949→                              type="number"
+   950→                              inputMode="decimal"
+   951→                              min={0}
+   952→                              max={CA_MAX}
+   953→                              value={draft.ca}
+   954→                              disabled={isLocked}
+   955→                              onChange={(e) =>
+   956→                                setDraft(row.studentId, { ca: e.target.value })
+   957→                              }
+   958→                              className="h-11"
+   959→                            />
+   960→                          </div>
+   961→                          <div className="space-y-1">
+   962→                            <Label htmlFor={`ex-${row.studentId}`} className="text-xs">
+   963→                              Exam / {EXAM_MAX}
+   964→                            </Label>
+   965→                            <Input
+   966→                              id={`ex-${row.studentId}`}
+   967→                              type="number"
+   968→                              inputMode="decimal"
+   969→                              min={0}
+   970→                              max={EXAM_MAX}
+   971→                              value={draft.exam}
+   972→                              disabled={isLocked}
+   973→                              onChange={(e) =>
+   974→                                setDraft(row.studentId, { exam: e.target.value })
+   975→                              }
+   976→                              className="h-11"
+   977→                            />
+   978→                          </div>
+   979→                        </div>
+   980→
+   981→                        {inputErr && (
+   982→                          <p className="text-xs text-destructive">{inputErr}</p>
+   983→                        )}
+   984→
+   985→                        {/* Live metrics */}
+   986→                        <div className="grid grid-cols-4 gap-2 text-center text-xs">
+   987→                          <div className="rounded-md border p-2">
+   988→                            <p className="text-muted-foreground">Total</p>
+   989→                            <p className="font-semibold tabular-nums">{total ?? '—'}</p>
+   990→                          </div>
+   991→                          <div className="rounded-md border p-2">
+   992→                            <p className="text-muted-foreground">Grade</p>
+   993→                            <p className="font-semibold">{grade ?? '—'}</p>
+   994→                          </div>
+   995→                          <div className="rounded-md border p-2">
+   996→                            <p className="text-muted-foreground">Pos.</p>
+   997→                            <p className="font-semibold tabular-nums">{ordinal(row.position)}</p>
+   998→                          </div>
+   999→                          {showCumulativeCol && (
+  1000→                            <div className="rounded-md border p-2 bg-emerald-50 dark:bg-emerald-950/30">
+  1001→                              <p className="text-muted-foreground">Cum.</p>
+  1002→                              <p className="font-semibold tabular-nums">{cumulative ?? '—'}</p>
+  1003→                            </div>
+  1004→                          )}
+  1005→                        </div>
+  1006→
+  1007→                        {/* Carry-over */}
+  1008→                        {(showFirstTermCol || showSecondTermCol) && (
+  1009→                          <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+  1010→                            {showFirstTermCol && (
+  1011→                              <span>1st Term: <strong className="tabular-nums">{row.priorTotals.firstTerm ?? '—'}</strong></span>
+  1012→                            )}
+  1013→                            {showSecondTermCol && (
+  1014→                              <span>2nd Term: <strong className="tabular-nums">{row.priorTotals.secondTerm ?? '—'}</strong></span>
+  1015→                            )}
+  1016→                          </div>
+  1017→                        )}
+  1018→
+  1019→                        {/* Remark */}
+  1020→                        <div className="space-y-1">
+  1021→                          <Label className="text-xs">Remark</Label>
+  1022→                          <Select
+  1023→                            value={draft.remarkId ?? '__none__'}
+  1024→                            onValueChange={(v) =>
+  1025→                              setDraft(row.studentId, {
+  1026→                                remarkId: v === '__none__' ? null : v,
+  1027→                              })
+  1028→                            }
+  1029→                            disabled={isLocked}
+  1030→                          >
+  1031→                            <SelectTrigger className="w-full h-11" aria-label={`Remark for ${fullName}`}>
+  1032→                              <SelectValue placeholder="No remark" />
+  1033→                            </SelectTrigger>
+  1034→                            <SelectContent>
+  1035→                              <SelectItem value="__none__">No remark</SelectItem>
+  1036→                              {Object.entries(
+  1037→                                remarks.reduce<Record<string, Remark[]>>((acc, r) => {
+  1038→                                  ;(acc[r.category] ||= []).push(r)
+  1039→                                  return acc
+  1040→                                }, {}),
+  1041→                              ).map(([cat, items]) => (
+  1042→                                <SelectGroup key={cat}>
+  1043→                                  <SelectLabel>{cat}</SelectLabel>
+  1044→                                  {items.map((r) => (
+  1045→                                    <SelectItem key={r.id} value={r.id}>
+  1046→                                      {r.text.length > 50 ? r.text.slice(0, 47) + '…' : r.text}
+  1047→                                    </SelectItem>
+  1048→                                  ))}
+  1049→                                </SelectGroup>
+  1050→                              ))}
+  1051→                            </SelectContent>
+  1052→                          </Select>
+  1053→                        </div>
+  1054→
+  1055→                        {/* Actions */}
+  1056→                        <div className="flex gap-2">
+  1057→                          <Button
+  1058→                            className="flex-1 h-11"
+  1059→                            size="sm"
+  1060→                            variant="secondary"
+  1061→                            onClick={() => handleSaveRow(row)}
+  1062→                            disabled={isLocked || saveMutation.isPending}
+  1063→                          >
+  1064→                            {saveMutation.isPending &&
+  1065→                              saveMutation.variables?.row.studentId === row.studentId ? (
+  1066→                              <Loader2 className="h-4 w-4 animate-spin" />
+  1067→                            ) : (
+  1068→                              <Save className="h-4 w-4" />
+  1069→                            )}
+  1070→                            Save
+  1071→                          </Button>
+  1072→                          <Button
+  1073→                            className="flex-1 h-11"
+  1074→                            size="sm"
+  1075→                            onClick={() => handleSubmitRow(row)}
+  1076→                            disabled={
+  1077→                              isLocked ||
+  1078→                              row.status === 'NEW' ||
+  1079→                              submitMutation.isPending
+  1080→                            }
+  1081→                          >
+  1082→                            {submitMutation.isPending &&
+  1083→                            submitMutation.variables?.studentIds?.[0] === row.studentId ? (
+  1084→                              <Loader2 className="h-4 w-4 animate-spin" />
+  1085→                            ) : (
+  1086→                              <Send className="h-4 w-4" />
+  1087→                            )}
+  1088→                            Submit
+  1089→                          </Button>
+  1090→                        </div>
+  1091→                        {isLocked && (
+  1092→                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+  1093→                            <Lock className="h-3 w-3" />
+  1094→                            {row.status === 'SUBMITTED'
+  1095→                              ? 'Submitted — awaiting principal approval.'
+  1096→                              : 'Approved by principal — read only.'}
+  1097→                          </p>
+  1098→                        )}
+  1099→                      </CardContent>
+  1100→                    </Card>
+  1101→                  )
+  1102→                })}
+  1103→              </div>
+  1104→            </>
+  1105→          )}
+  1106→        </>
+  1107→      )}
+  1108→
+  1109→      {!selectedAssignment && (
+  1110→        <Card>
+  1111→          <CardContent className="p-10 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
+  1112→            <Info className="h-8 w-8" />
+  1113→            <p className="text-sm">
+  1114→              Select a class + subject above to start entering results.
+  1115→            </p>
+  1116→          </CardContent>
+  1117→        </Card>
+  1118→      )}
+  1119→    </div>
+  1120→  )
+  1121→}
+  1122→

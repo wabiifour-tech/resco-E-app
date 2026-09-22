@@ -6,10 +6,11 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/dashboard/teacher
 // Teacher-only dashboard summary: their identity, current session+term,
-// their assignments (with distinct class arms + subjects), and result
-// status counts for their assigned (classArmId, subjectId) combos in the
+// their assignments (with distinct classes + subjects), and result
+// status counts for their assigned (classId, subjectId) combos in the
 // active session+term. Principals are forbidden (their dashboard lives
 // at /api/dashboard/principal).
+// The distinct-class list uses `class: { id, name }` (NOT classArm).
 export async function GET() {
   const u = await getSession()
   if (!u) {
@@ -26,29 +27,34 @@ export async function GET() {
   const assignments = await db.teacherAssignment.findMany({
     where: { teacherId },
     include: {
-      classArm: { select: { id: true, fullName: true } },
+      class: { select: { id: true, name: true, level: true } },
       subject: { select: { id: true, name: true } },
     },
-    orderBy: [{ classArm: { fullName: 'asc' } }, { subject: { name: 'asc' } }],
+    orderBy: [
+      { class: { level: 'asc' } },
+      { class: { name: 'asc' } },
+      { subject: { name: 'asc' } },
+    ],
   })
 
   const assignmentRows = assignments.map((a) => ({
-    classArmId: a.classArmId,
-    classArmName: a.classArm.fullName,
+    classId: a.classId,
+    className: a.class.name,
+    classLevel: a.class.level,
     subjectId: a.subjectId,
     subjectName: a.subject.name,
   }))
 
-  // Distinct class arms + subjects
-  const seenArms = new Map<string, string>()
+  // Distinct classes + subjects
+  const seenClasses = new Map<string, { name: string }>()
   const seenSubs = new Map<string, string>()
   for (const a of assignmentRows) {
-    if (!seenArms.has(a.classArmId)) seenArms.set(a.classArmId, a.classArmName)
+    if (!seenClasses.has(a.classId)) seenClasses.set(a.classId, { name: a.className })
     if (!seenSubs.has(a.subjectId)) seenSubs.set(a.subjectId, a.subjectName)
   }
-  const classArms = Array.from(seenArms.entries()).map(([id, fullName]) => ({
+  const classes = Array.from(seenClasses.entries()).map(([id, { name }]) => ({
     id,
-    fullName,
+    name,
   }))
   const subjects = Array.from(seenSubs.entries()).map(([id, name]) => ({
     id,
@@ -62,14 +68,14 @@ export async function GET() {
   let needsCorrection = 0
 
   const subjectIds = Array.from(seenSubs.keys())
-  const classArmIds = Array.from(seenArms.keys())
+  const classIds = Array.from(seenClasses.keys())
 
-  if (session && term && subjectIds.length > 0 && classArmIds.length > 0) {
+  if (session && term && subjectIds.length > 0 && classIds.length > 0) {
     const baseWhere = {
       sessionId: session.id,
       termId: term.id,
       subjectId: { in: subjectIds },
-      classArmId: { in: classArmIds },
+      classId: { in: classIds },
     }
     ;[saved, submitted, approved, needsCorrection] = await Promise.all([
       db.result.count({ where: { ...baseWhere, status: 'SAVED' } }),
@@ -88,7 +94,7 @@ export async function GET() {
       termId: term?.id ?? null,
     },
     assignments: assignmentRows,
-    classArms,
+    classes,
     subjects,
     results: { saved, submitted, approved, needsCorrection },
   })

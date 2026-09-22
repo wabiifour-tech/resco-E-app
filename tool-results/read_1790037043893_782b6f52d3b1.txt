@@ -1,0 +1,1322 @@
+     1→'use client'
+     2→
+     3→import { useMemo, useState } from 'react'
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+     5→import { toast } from 'sonner'
+     6→import {
+     7→  CheckCircle2,
+     8→  Clock,
+     9→  AlertTriangle,
+    10→  Loader2,
+    11→  Unlock,
+    12→  Undo2,
+    13→  Check,
+    14→  RefreshCcw,
+    15→  Search,
+    16→  ClipboardCheck,
+    17→} from 'lucide-react'
+    18→
+    19→import { Button } from '@/components/ui/button'
+    20→import { Card, CardContent } from '@/components/ui/card'
+    21→import { Badge } from '@/components/ui/badge'
+    22→import { Checkbox } from '@/components/ui/checkbox'
+    23→import { Skeleton } from '@/components/ui/skeleton'
+    24→import { Input } from '@/components/ui/input'
+    25→import { Label } from '@/components/ui/label'
+    26→import { Textarea } from '@/components/ui/textarea'
+    27→import {
+    28→  Table,
+    29→  TableBody,
+    30→  TableCell,
+    31→  TableHead,
+    32→  TableHeader,
+    33→  TableRow,
+    34→} from '@/components/ui/table'
+    35→import {
+    36→  Select,
+    37→  SelectContent,
+    38→  SelectItem,
+    39→  SelectTrigger,
+    40→  SelectValue,
+    41→} from '@/components/ui/select'
+    42→import {
+    43→  Dialog,
+    44→  DialogContent,
+    45→  DialogDescription,
+    46→  DialogFooter,
+    47→  DialogHeader,
+    48→  DialogTitle,
+    49→} from '@/components/ui/dialog'
+    50→import {
+    51→  AlertDialog,
+    52→  AlertDialogAction,
+    53→  AlertDialogCancel,
+    54→  AlertDialogContent,
+    55→  AlertDialogDescription,
+    56→  AlertDialogFooter,
+    57→  AlertDialogHeader,
+    58→  AlertDialogTitle,
+    59→} from '@/components/ui/alert-dialog'
+    60→import { ApiError, api } from '@/lib/api-client'
+    61→
+    62→// ─── Types ────────────────────────────────────────────────────────────────────
+    63→
+    64→type ResultRow = {
+    65→  id: string
+    66→  status: 'SAVED' | 'SUBMITTED' | 'NEEDS_CORRECTION' | 'APPROVED'
+    67→  ca: number | null
+    68→  exam: number | null
+    69→  total: number | null
+    70→  grade: string | null
+    71→  position: number | null
+    72→  cumulative: number | null
+    73→  priorTotals: number[]
+    74→  remarkId: string | null
+    75→  remarkText: string | null
+    76→  remarkCategory: string | null
+    77→  student: {
+    78→    id: string
+    79→    admissionNumber: string
+    80→    firstName: string
+    81→    lastName: string
+    82→    otherNames: string | null
+    83→    gender: string | null
+    84→    classId: string
+    85→    classArmId: string | null
+    86→  }
+    87→  subject: { id: string; name: string; code: string | null }
+    88→  classArm: {
+    89→    id: string
+    90→    name: string
+    91→    fullName: string
+    92→    classId: string
+    93→    class: { id: string; name: string; level: number }
+    94→  }
+    95→  term: { id: string; name: string; order: number }
+    96→  session: { id: string; name: string }
+    97→  enteredByTeacherId: string | null
+    98→  enteredByTeacherName: string | null
+    99→  approvedById: string | null
+   100→  approvedAt: string | null
+   101→  createdAt: string
+   102→  updatedAt: string
+   103→}
+   104→
+   105→type Summary = {
+   106→  pending: number
+   107→  approved: number
+   108→  needsCorrection: number
+   109→  saved: number
+   110→}
+   111→
+   112→type ApprovalsResponse = {
+   113→  results: ResultRow[]
+   114→  summary: Summary
+   115→  filters: {
+   116→    sessionId: string | null
+   117→    termId: string | null
+   118→    classArmId: string | null
+   119→    subjectId: string | null
+   120→    status: string
+   121→  }
+   122→}
+   123→
+   124→type SessionItem = {
+   125→  id: string
+   126→  name: string
+   127→  isActive: boolean
+   128→  terms: { id: string; name: string; order: number; isActive: boolean }[]
+   129→}
+   130→
+   131→type ClassItem = {
+   132→  id: string
+   133→  name: string
+   134→  level: number
+   135→  arms: { id: string; name: string; fullName: string; classId: string }[]
+   136→}
+   137→
+   138→type SubjectItem = { id: string; name: string; code: string | null }
+   139→
+   140→// ─── Helpers ──────────────────────────────────────────────────────────────────
+   141→
+   142→function studentName(r: ResultRow): string {
+   143→  return [r.student.firstName, r.student.lastName].filter(Boolean).join(' ')
+   144→}
+   145→
+   146→function ordinal(n: number | null): string {
+   147→  if (!n || n <= 0) return '—'
+   148→  const s = ['th', 'st', 'nd', 'rd']
+   149→  const v = n % 100
+   150→  return n + (s[(v - 20) % 10] || s[v] || s[0])
+   151→}
+   152→
+   153→function statusBadge(status: ResultRow['status']) {
+   154→  switch (status) {
+   155→    case 'SAVED':
+   156→      return (
+   157→        <Badge variant="secondary">
+   158→          <Clock className="h-3 w-3" /> Saved
+   159→        </Badge>
+   160→      )
+   161→    case 'SUBMITTED':
+   162→      return (
+   163→        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 border-transparent">
+   164→          <Clock className="h-3 w-3" /> Pending
+   165→        </Badge>
+   166→      )
+   167→    case 'NEEDS_CORRECTION':
+   168→      return (
+   169→        <Badge variant="destructive">
+   170→          <AlertTriangle className="h-3 w-3" /> Correction
+   171→        </Badge>
+   172→      )
+   173→    case 'APPROVED':
+   174→      return (
+   175→        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-transparent">
+   176→          <CheckCircle2 className="h-3 w-3" /> Approved
+   177→        </Badge>
+   178→      )
+   179→    default:
+   180→      return <Badge variant="outline">{status}</Badge>
+   181→  }
+   182→}
+   183→
+   184→// Group results by (classArmId + subjectId) so the principal can review a
+   185→// whole subject-class "result sheet" at once.
+   186→function groupResults(rows: ResultRow[]) {
+   187→  const map = new Map<
+   188→    string,
+   189→    {
+   190→      key: string
+   191→      classArmId: string
+   192→      classArmName: string
+   193→      className: string
+   194→      subjectId: string
+   195→      subjectName: string
+   196→      enteredByTeacherName: string | null
+   197→      rows: ResultRow[]
+   198→    }
+   199→  >()
+   200→  for (const r of rows) {
+   201→    const k = `${r.classArmId}|${r.subjectId}`
+   202→    if (!map.has(k)) {
+   203→      map.set(k, {
+   204→        key: k,
+   205→        classArmId: r.classArm.id,
+   206→        classArmName: r.classArm.fullName,
+   207→        className: r.classArm.class.name,
+   208→        subjectId: r.subject.id,
+   209→        subjectName: r.subject.name,
+   210→        enteredByTeacherName: r.enteredByTeacherName ?? null,
+   211→        rows: [],
+   212→      })
+   213→    }
+   214→    map.get(k)!.rows.push(r)
+   215→  }
+   216→  return Array.from(map.values())
+   217→}
+   218→
+   219→// ─── API helpers ───────────────────────────────────────────────────────────────
+   220→
+   221→async function fetchApprovals(params: {
+   222→  sessionId?: string
+   223→  termId?: string
+   224→  classArmId?: string
+   225→  subjectId?: string
+   226→  status?: string
+   227→}): Promise<ApprovalsResponse> {
+   228→  return api.get<ApprovalsResponse>('/api/approvals', { query: params })
+   229→}
+   230→
+   231→async function approveResults(resultIds: string[]) {
+   232→  return api.post<{
+   233→    approved: number
+   234→    skipped: number
+   235→    missing: number
+   236→    totalRequested: number
+   237→  }>('/api/approvals/approve', { resultIds })
+   238→}
+   239→
+   240→async function unlockResult(id: string) {
+   241→  return api.post<{ ok: boolean; id: string; status: string }>(
+   242→    `/api/approvals/${id}/unlock`,
+   243→  )
+   244→}
+   245→
+   246→async function returnResult(id: string, reason: string) {
+   247→  return api.post<{ ok: boolean; id: string; status: string }>(
+   248→    `/api/approvals/${id}/return`,
+   249→    { reason },
+   250→  )
+   251→}
+   252→
+   253→// ─── Return-for-correction dialog ─────────────────────────────────────────────
+   254→
+   255→function ReturnDialog({
+   256→  open,
+   257→  onOpenChange,
+   258→  result,
+   259→}: {
+   260→  open: boolean
+   261→  onOpenChange: (o: boolean) => void
+   262→  result: ResultRow | null
+   263→}) {
+   264→  return (
+   265→    <Dialog open={open} onOpenChange={onOpenChange}>
+   266→      <DialogContent className="sm:max-w-md">
+   267→        {result && (
+   268→          <ReturnFormBody
+   269→            result={result}
+   270→            onOpenChange={onOpenChange}
+   271→          />
+   272→        )}
+   273→      </DialogContent>
+   274→    </Dialog>
+   275→  )
+   276→}
+   277→
+   278→function ReturnFormBody({
+   279→  result,
+   280→  onOpenChange,
+   281→}: {
+   282→  result: ResultRow
+   283→  onOpenChange: (o: boolean) => void
+   284→}) {
+   285→  const qc = useQueryClient()
+   286→  const [reason, setReason] = useState('')
+   287→
+   288→  const mutation = useMutation({
+   289→    mutationFn: (r: string) => returnResult(result.id, r),
+   290→    onSuccess: () => {
+   291→      qc.invalidateQueries({ queryKey: ['approvals'] })
+   292→      toast.success(
+   293→        `Result returned for correction: ${studentName(result)}`,
+   294→      )
+   295→      onOpenChange(false)
+   296→    },
+   297→    onError: (err: unknown) => {
+   298→      const msg =
+   299→        err instanceof ApiError
+   300→          ? err.message
+   301→          : err instanceof Error
+   302→            ? err.message
+   303→            : 'Failed to return result'
+   304→      toast.error(msg)
+   305→    },
+   306→  })
+   307→
+   308→  function handleSubmit(e: React.FormEvent) {
+   309→    e.preventDefault()
+   310→    if (!reason.trim()) return toast.error('A reason is required')
+   311→    mutation.mutate(reason.trim())
+   312→  }
+   313→
+   314→  return (
+   315→    <>
+   316→      <DialogHeader>
+   317→        <DialogTitle className="flex items-center gap-2">
+   318→          <Undo2 className="h-4 w-4" />
+   319→          Return for correction
+   320→        </DialogTitle>
+   321→        <DialogDescription>
+   322→          Send this result back to{' '}
+   323→          <span className="font-medium text-foreground">
+   324→            {result.enteredByTeacherName ?? 'the teacher'}
+   325→          </span>{' '}
+   326→          for correction. The student will be hidden from the approvals queue
+   327→          until the teacher re-submits.
+   328→        </DialogDescription>
+   329→      </DialogHeader>
+   330→
+   331→      <div className="rounded-md border p-3 text-sm space-y-1">
+   332→        <div className="flex justify-between gap-2">
+   333→          <span className="text-muted-foreground">Student</span>
+   334→          <span className="font-medium text-right">
+   335→            {studentName(result)}
+   336→            <span className="block text-xs text-muted-foreground font-normal">
+   337→              {result.student.admissionNumber}
+   338→            </span>
+   339→          </span>
+   340→        </div>
+   341→        <div className="flex justify-between gap-2">
+   342→          <span className="text-muted-foreground">Subject</span>
+   343→          <span className="font-medium text-right">{result.subject.name}</span>
+   344→        </div>
+   345→        <div className="flex justify-between gap-2">
+   346→          <span className="text-muted-foreground">Class</span>
+   347→          <span className="font-medium text-right">
+   348→            {result.classArm.fullName}
+   349→          </span>
+   350→        </div>
+   351→        <div className="flex justify-between gap-2">
+   352→          <span className="text-muted-foreground">Total</span>
+   353→          <span className="font-medium text-right">
+   354→            {result.total ?? '—'} / 100 ({result.grade ?? '—'})
+   355→          </span>
+   356→        </div>
+   357→      </div>
+   358→
+   359→      <form onSubmit={handleSubmit} className="space-y-3">
+   360→        <div className="space-y-2">
+   361→          <Label htmlFor="reason">Reason / correction note</Label>
+   362→          <Textarea
+   363→            id="reason"
+   364→            value={reason}
+   365→            onChange={(e) => setReason(e.target.value)}
+   366→            placeholder="e.g. CA total should be 28 not 38. Exam score appears transposed. Please verify and re-submit."
+   367→            rows={4}
+   368→            maxLength={500}
+   369→            autoFocus
+   370→            required
+   371→          />
+   372→          <p className="text-xs text-muted-foreground">
+   373→            The teacher will see this note. {reason.length}/500 characters.
+   374→          </p>
+   375→        </div>
+   376→
+   377→        <DialogFooter>
+   378→          <Button
+   379→            type="button"
+   380→            variant="outline"
+   381→            onClick={() => onOpenChange(false)}
+   382→            disabled={mutation.isPending}
+   383→          >
+   384→            Cancel
+   385→          </Button>
+   386→          <Button type="submit" variant="destructive" disabled={mutation.isPending}>
+   387→            {mutation.isPending && (
+   388→              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+   389→            )}
+   390→            Return for correction
+   391→          </Button>
+   392→        </DialogFooter>
+   393→      </form>
+   394→    </>
+   395→  )
+   396→}
+   397→
+   398→// ─── Reopen (unlock) confirmation ────────────────────────────────────────────
+   399→
+   400→function ReopenDialog({
+   401→  open,
+   402→  onOpenChange,
+   403→  result,
+   404→}: {
+   405→  open: boolean
+   406→  onOpenChange: (o: boolean) => void
+   407→  result: ResultRow | null
+   408→}) {
+   409→  const qc = useQueryClient()
+   410→  const mutation = useMutation({
+   411→    mutationFn: (id: string) => unlockResult(id),
+   412→    onSuccess: () => {
+   413→      qc.invalidateQueries({ queryKey: ['approvals'] })
+   414→      toast.success('Result reopened — the teacher can now edit it again.')
+   415→      onOpenChange(false)
+   416→    },
+   417→    onError: (err: unknown) => {
+   418→      const msg =
+   419→        err instanceof ApiError
+   420→          ? err.message
+   421→          : err instanceof Error
+   422→            ? err.message
+   423→            : 'Failed to reopen result'
+   424→      toast.error(msg)
+   425→    },
+   426→  })
+   427→
+   428→  return (
+   429→    <AlertDialog
+   430→      open={open && !!result}
+   431→      onOpenChange={(o) => {
+   432→        if (!mutation.isPending) onOpenChange(o)
+   433→      }}
+   434→    >
+   435→      <AlertDialogContent>
+   436→        <AlertDialogHeader>
+   437→          <AlertDialogTitle className="flex items-center gap-2">
+   438→            <Unlock className="h-4 w-4" /> Reopen this result?
+   439→          </AlertDialogTitle>
+   440→          <AlertDialogDescription>
+   441→            {result ? (
+   442→              <>
+   443→                <span className="font-medium text-foreground">
+   444→                  {studentName(result)}
+   445→                </span>{' '}
+   446→                — {result.subject.name} ({result.classArm.fullName}) will be
+   447→                unlocked and set back to <span className="font-medium">Pending</span>.
+   448→                The teacher will be able to edit and re-submit it. Approved
+   449→                audit history is kept.
+   450→              </>
+   451→            ) : null}
+   452→          </AlertDialogDescription>
+   453→        </AlertDialogHeader>
+   454→        <AlertDialogFooter>
+   455→          <AlertDialogCancel disabled={mutation.isPending}>
+   456→            Cancel
+   457→          </AlertDialogCancel>
+   458→          <AlertDialogAction
+   459→            disabled={mutation.isPending}
+   460→            onClick={(e) => {
+   461→              e.preventDefault()
+   462→              if (result) mutation.mutate(result.id)
+   463→            }}
+   464→          >
+   465→            {mutation.isPending && (
+   466→              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+   467→            )}
+   468→            Reopen for editing
+   469→          </AlertDialogAction>
+   470→        </AlertDialogFooter>
+   471→      </AlertDialogContent>
+   472→    </AlertDialog>
+   473→  )
+   474→}
+   475→
+   476→// ─── Mobile card row ─────────────────────────────────────────────────────────
+   477→
+   478→function MobileRowCard({
+   479→  r,
+   480→  selected,
+   481→  onToggleSelect,
+   482→  onApprove,
+   483→  onReturn,
+   484→  onReopen,
+   485→  busy,
+   486→}: {
+   487→  r: ResultRow
+   488→  selected: boolean
+   489→  onToggleSelect: (id: string, checked: boolean) => void
+   490→  onApprove: (id: string) => void
+   491→  onReturn: (r: ResultRow) => void
+   492→  onReopen: (r: ResultRow) => void
+   493→  busy: boolean
+   494→}) {
+   495→  return (
+   496→    <div
+   497→      className={`rounded-lg border p-3 space-y-2 ${
+   498→        selected ? 'border-primary bg-accent/30' : 'bg-background'
+   499→      }`}
+   500→    >
+   501→      <div className="flex items-start justify-between gap-2">
+   502→        <div className="flex items-start gap-2 min-w-0">
+   503→          <Checkbox
+   504→            checked={selected}
+   505→            onCheckedChange={(c) => onToggleSelect(r.id, !!c)}
+   506→            aria-label={`Select ${studentName(r)}`}
+   507→            className="mt-1"
+   508→            disabled={r.status !== 'SUBMITTED'}
+   509→          />
+   510→          <div className="min-w-0">
+   511→            <p className="font-medium leading-tight truncate">
+   512→              {studentName(r)}
+   513→            </p>
+   514→            <p className="text-xs text-muted-foreground truncate">
+   515→              {r.student.admissionNumber}
+   516→            </p>
+   517→          </div>
+   518→        </div>
+   519→        {statusBadge(r.status)}
+   520→      </div>
+   521→
+   522→      <div className="grid grid-cols-3 gap-2 text-center">
+   523→        <div className="rounded-md bg-muted/50 p-1.5">
+   524→          <p className="text-[10px] text-muted-foreground">CA</p>
+   525→          <p className="text-sm font-semibold">{r.ca ?? '—'}</p>
+   526→        </div>
+   527→        <div className="rounded-md bg-muted/50 p-1.5">
+   528→          <p className="text-[10px] text-muted-foreground">Exam</p>
+   529→          <p className="text-sm font-semibold">{r.exam ?? '—'}</p>
+   530→        </div>
+   531→        <div className="rounded-md bg-muted/50 p-1.5">
+   532→          <p className="text-[10px] text-muted-foreground">Total</p>
+   533→          <p className="text-sm font-semibold">{r.total ?? '—'}</p>
+   534→        </div>
+   535→      </div>
+   536→
+   537→      <div className="grid grid-cols-3 gap-2 text-xs text-center">
+   538→        <div>
+   539→          <p className="text-muted-foreground">Grade</p>
+   540→          <p className="font-semibold">{r.grade ?? '—'}</p>
+   541→        </div>
+   542→        <div>
+   543→          <p className="text-muted-foreground">Position</p>
+   544→          <p className="font-semibold">{ordinal(r.position)}</p>
+   545→        </div>
+   546→        <div>
+   547→          <p className="text-muted-foreground">Cumulative</p>
+   548→          <p className="font-semibold">
+   549→            {r.cumulative != null ? r.cumulative : '—'}
+   550→          </p>
+   551→        </div>
+   552→      </div>
+   553→
+   554→      {r.remarkText && (
+   555→        <p className="text-xs text-muted-foreground italic line-clamp-2">
+   556→          “{r.remarkText}”
+   557→        </p>
+   558→      )}
+   559→
+   560→      <div className="flex flex-wrap gap-2 pt-1">
+   561→        {r.status === 'SUBMITTED' && (
+   562→          <>
+   563→            <Button
+   564→              size="sm"
+   565→              className="bg-emerald-600 hover:bg-emerald-700 text-white flex-1 min-h-[44px]"
+   566→              disabled={busy}
+   567→              onClick={() => onApprove(r.id)}
+   568→            >
+   569→              <Check className="h-4 w-4" />
+   570→              Approve
+   571→            </Button>
+   572→            <Button
+   573→              size="sm"
+   574→              variant="outline"
+   575→              className="min-h-[44px]"
+   576→              disabled={busy}
+   577→              onClick={() => onReturn(r)}
+   578→            >
+   579→              <Undo2 className="h-4 w-4" />
+   580→              Return
+   581→            </Button>
+   582→          </>
+   583→        )}
+   584→        {r.status === 'APPROVED' && (
+   585→          <Button
+   586→            size="sm"
+   587→            variant="outline"
+   588→            className="min-h-[44px] flex-1"
+   589→            disabled={busy}
+   590→            onClick={() => onReopen(r)}
+   591→          >
+   592→            <Unlock className="h-4 w-4" />
+   593→            Reopen
+   594→          </Button>
+   595→        )}
+   596→        {r.status === 'NEEDS_CORRECTION' && (
+   597→          <p className="text-xs text-muted-foreground italic py-2">
+   598→            Awaiting teacher correction.
+   599→          </p>
+   600→        )}
+   601→      </div>
+   602→      <p className="text-[10px] text-muted-foreground">
+   603→        Entered by {r.enteredByTeacherName ?? '—'}
+   604→      </p>
+   605→    </div>
+   606→  )
+   607→}
+   608→
+   609→// ─── Result-sheet group card ──────────────────────────────────────────────────
+   610→
+   611→function ResultSheetGroup({
+   612→  group,
+   613→  selected,
+   614→  onToggleSelect,
+   615→  onToggleGroup,
+   616→  onApproveOne,
+   617→  onApproveBatch,
+   618→  onReturn,
+   619→  onReopen,
+   620→  busyIds,
+   621→}: {
+   622→  group: ReturnType<typeof groupResults>[number]
+   623→  selected: Set<string>
+   624→  onToggleSelect: (id: string, checked: boolean) => void
+   625→  onToggleGroup: (group: ReturnType<typeof groupResults>[number], checked: boolean) => void
+   626→  onApproveOne: (id: string) => void
+   627→  onApproveBatch: (ids: string[]) => void
+   628→  onReturn: (r: ResultRow) => void
+   629→  onReopen: (r: ResultRow) => void
+   630→  busyIds: Set<string>
+   631→}) {
+   632→  const submittedRows = group.rows.filter((r) => r.status === 'SUBMITTED')
+   633→  const selectedCount = submittedRows.filter((r) => selected.has(r.id)).length
+   634→  const allSelected =
+   635→    submittedRows.length > 0 && selectedCount === submittedRows.length
+   636→  const someSelected = selectedCount > 0 && !allSelected
+   637→  const hasApproved = group.rows.some((r) => r.status === 'APPROVED')
+   638→  const hasNeedsCorrection = group.rows.some(
+   639→    (r) => r.status === 'NEEDS_CORRECTION',
+   640→  )
+   641→
+   642→  return (
+   643→    <Card className="overflow-hidden">
+   644→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b bg-muted/40 px-4 py-3">
+   645→        <div className="min-w-0">
+   646→          <h3 className="font-semibold truncate">
+   647→            {group.subjectName} — {group.classArmName}
+   648→          </h3>
+   649→          <p className="text-xs text-muted-foreground truncate">
+   650→            {group.rows.length} student
+   651→            {group.rows.length === 1 ? '' : 's'} · Entered by{' '}
+   652→            {group.enteredByTeacherName ?? '—'}
+   653→            {submittedRows.length > 0
+   654→              ? ` · ${submittedRows.length} pending`
+   655→              : hasApproved
+   656→                ? ' · all approved'
+   657→                : hasNeedsCorrection
+   658→                  ? ' · some need correction'
+   659→                  : ''}
+   660→          </p>
+   661→        </div>
+   662→        <div className="flex items-center gap-2 shrink-0">
+   663→          <Checkbox
+   664→            checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+   665→            onCheckedChange={(c) => onToggleGroup(group, !!c)}
+   666→            disabled={submittedRows.length === 0}
+   667→            aria-label="Select all pending in this group"
+   668→            id={`chk-${group.key}`}
+   669→          />
+   670→          <Label
+   671→            htmlFor={`chk-${group.key}`}
+   672→            className="text-xs text-muted-foreground cursor-pointer select-none"
+   673→          >
+   674→            Select pending
+   675→          </Label>
+   676→          <Button
+   677→            size="sm"
+   678→            className="bg-emerald-600 hover:bg-emerald-700 text-white min-h-[44px]"
+   679→            disabled={
+   680→              submittedRows.length === 0 ||
+   681→              busyIds.size > 0 ||
+   682→              selectedCount === 0
+   683→            }
+   684→            onClick={() =>
+   685→              onApproveBatch(
+   686→                submittedRows
+   687→                  .filter((r) => selected.has(r.id))
+   688→                  .map((r) => r.id),
+   689→              )
+   690→            }
+   691→            title={
+   692→              selectedCount > 0
+   693→                ? `Approve ${selectedCount} selected`
+   694→                : `Approve all ${submittedRows.length} pending in this group`
+   695→            }
+   696→          >
+   697→            <Check className="h-4 w-4" />
+   698→            {selectedCount > 0
+   699→              ? `Approve ${selectedCount}`
+   700→              : `Approve all (${submittedRows.length})`}
+   701→          </Button>
+   702→        </div>
+   703→      </div>
+   704→
+   705→      {/* Desktop table */}
+   706→      <div className="hidden md:block">
+   707→        <Table>
+   708→          <TableHeader>
+   709→            <TableRow>
+   710→              <TableHead className="w-8"></TableHead>
+   711→              <TableHead>Student</TableHead>
+   712→              <TableHead className="text-center">CA</TableHead>
+   713→              <TableHead className="text-center">Exam</TableHead>
+   714→              <TableHead className="text-center">Total</TableHead>
+   715→              <TableHead className="text-center">Grade</TableHead>
+   716→              <TableHead className="text-center">Pos.</TableHead>
+   717→              <TableHead className="text-center">Cum.</TableHead>
+   718→              <TableHead>Remark</TableHead>
+   719→              <TableHead>Status</TableHead>
+   720→              <TableHead className="text-right">Actions</TableHead>
+   721→            </TableRow>
+   722→          </TableHeader>
+   723→          <TableBody>
+   724→            {group.rows.map((r) => (
+   725→              <TableRow key={r.id}>
+   726→                <TableCell>
+   727→                  <Checkbox
+   728→                    checked={selected.has(r.id)}
+   729→                    onCheckedChange={(c) => onToggleSelect(r.id, !!c)}
+   730→                    disabled={r.status !== 'SUBMITTED'}
+   731→                    aria-label={`Select ${studentName(r)}`}
+   732→                  />
+   733→                </TableCell>
+   734→                <TableCell>
+   735→                  <div className="font-medium">{studentName(r)}</div>
+   736→                  <div className="text-xs text-muted-foreground">
+   737→                    {r.student.admissionNumber}
+   738→                  </div>
+   739→                </TableCell>
+   740→                <TableCell className="text-center">{r.ca ?? '—'}</TableCell>
+   741→                <TableCell className="text-center">{r.exam ?? '—'}</TableCell>
+   742→                <TableCell className="text-center font-semibold">
+   743→                  {r.total ?? '—'}
+   744→                </TableCell>
+   745→                <TableCell className="text-center">{r.grade ?? '—'}</TableCell>
+   746→                <TableCell className="text-center">
+   747→                  {ordinal(r.position)}
+   748→                </TableCell>
+   749→                <TableCell className="text-center">
+   750→                  {r.cumulative != null ? r.cumulative : '—'}
+   751→                </TableCell>
+   752→                <TableCell className="max-w-[200px]">
+   753→                  {r.remarkText ? (
+   754→                    <span
+   755→                      className="text-xs text-muted-foreground line-clamp-1"
+   756→                      title={r.remarkText}
+   757→                    >
+   758→                      “{r.remarkText}”
+   759→                    </span>
+   760→                  ) : (
+   761→                    <span className="text-muted-foreground">—</span>
+   762→                  )}
+   763→                </TableCell>
+   764→                <TableCell>{statusBadge(r.status)}</TableCell>
+   765→                <TableCell>
+   766→                  <div className="flex justify-end gap-1">
+   767→                    {r.status === 'SUBMITTED' && (
+   768→                      <>
+   769→                        <Button
+   770→                          size="sm"
+   771→                          variant="ghost"
+   772→                          className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 min-h-[44px]"
+   773→                          disabled={busyIds.has(r.id)}
+   774→                          onClick={() => onApproveOne(r.id)}
+   775→                          aria-label={`Approve ${studentName(r)}`}
+   776→                        >
+   777→                          <Check className="h-4 w-4" />
+   778→                          <span className="sr-only">Approve</span>
+   779→                        </Button>
+   780→                        <Button
+   781→                          size="sm"
+   782→                          variant="ghost"
+   783→                          className="min-h-[44px]"
+   784→                          disabled={busyIds.has(r.id)}
+   785→                          onClick={() => onReturn(r)}
+   786→                          aria-label={`Return for correction: ${studentName(r)}`}
+   787→                        >
+   788→                          <Undo2 className="h-4 w-4" />
+   789→                          <span className="sr-only">Return</span>
+   790→                        </Button>
+   791→                      </>
+   792→                    )}
+   793→                    {r.status === 'APPROVED' && (
+   794→                      <Button
+   795→                        size="sm"
+   796→                        variant="ghost"
+   797→                        className="min-h-[44px]"
+   798→                        disabled={busyIds.has(r.id)}
+   799→                        onClick={() => onReopen(r)}
+   800→                        aria-label={`Reopen: ${studentName(r)}`}
+   801→                      >
+   802→                        <Unlock className="h-4 w-4" />
+   803→                        <span className="sr-only">Reopen</span>
+   804→                      </Button>
+   805→                    )}
+   806→                    {r.status === 'NEEDS_CORRECTION' && (
+   807→                      <span className="text-xs text-muted-foreground italic">
+   808→                        Returned
+   809→                      </span>
+   810→                    )}
+   811→                  </div>
+   812→                </TableCell>
+   813→              </TableRow>
+   814→            ))}
+   815→          </TableBody>
+   816→        </Table>
+   817→      </div>
+   818→
+   819→      {/* Mobile cards */}
+   820→      <div className="md:hidden divide-y">
+   821→        {group.rows.map((r) => (
+   822→          <div key={r.id} className="p-3">
+   823→            <MobileRowCard
+   824→              r={r}
+   825→              selected={selected.has(r.id)}
+   826→              onToggleSelect={onToggleSelect}
+   827→              onApprove={onApproveOne}
+   828→              onReturn={onReturn}
+   829→              onReopen={onReopen}
+   830→              busy={busyIds.has(r.id)}
+   831→            />
+   832→          </div>
+   833→        ))}
+   834→      </div>
+   835→    </Card>
+   836→  )
+   837→}
+   838→
+   839→// ─── Main view ────────────────────────────────────────────────────────────────
+   840→
+   841→export function PrincipalApprovals() {
+   842→  const qc = useQueryClient()
+   843→
+   844→  // Filter state (defaults filled in from /api/sessions + /api/settings)
+   845→  const [sessionId, setSessionId] = useState<string>('')
+   846→  const [termId, setTermId] = useState<string>('')
+   847→  const [classArmId, setClassArmId] = useState<string>('ALL')
+   848→  const [subjectId, setSubjectId] = useState<string>('ALL')
+   849→  const [statusFilter, setStatusFilter] = useState<string>('SUBMITTED')
+   850→
+   851→  const [selected, setSelected] = useState<Set<string>>(new Set())
+   852→  const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
+   853→  const [returnTarget, setReturnTarget] = useState<ResultRow | null>(null)
+   854→  const [reopenTarget, setReopenTarget] = useState<ResultRow | null>(null)
+   855→
+   856→  // Bootstrap: get sessions (which include terms) so the principal can change
+   857→  // session/term; default to active session/term.
+   858→  const sessionsQuery = useQuery<SessionItem[]>({
+   859→    queryKey: ['sessions'],
+   860→    queryFn: async () => {
+   861→      const r = await api.get<{
+   862→        sessions: SessionItem[]
+   863→        currentSessionId: string | null
+   864→        currentTermId: string | null
+   865→      }>('/api/sessions')
+   866→      return r.sessions
+   867→    },
+   868→    staleTime: 60_000,
+   869→  })
+   870→
+   871→  // Derive the active session/term from the sessions list. We use these as
+   872→  // fallback defaults when the user hasn't picked anything yet — that way we
+   873→  // avoid the setState-in-effect anti-pattern: the "effective" session/term
+   874→  // is computed during render from the cached sessions list, and the user's
+   875→  // explicit selection (in `sessionId`/`termId` state) wins once set.
+   876→  const activeSession = useMemo(
+   877→    () => sessionsQuery.data?.find((s) => s.isActive) ?? null,
+   878→    [sessionsQuery.data],
+   879→  )
+   880→  const effSessionId = sessionId || activeSession?.id || ''
+   881→  const effSession = useMemo(
+   882→    () => sessionsQuery.data?.find((s) => s.id === effSessionId) ?? null,
+   883→    [sessionsQuery.data, effSessionId],
+   884→  )
+   885→  const effTermId =
+   886→    termId ||
+   887→    effSession?.terms.find((t) => t.isActive)?.id ||
+   888→    effSession?.terms[0]?.id ||
+   889→    ''
+   890→
+   891→  // Classes (with arms) for the class-arm filter dropdown.
+   892→  const classesQuery = useQuery<ClassItem[]>({
+   893→    queryKey: ['classes'],
+   894→    queryFn: async () => {
+   895→      const r = await api.get<{ classes: ClassItem[] }>('/api/classes')
+   896→      return r.classes
+   897→    },
+   898→    staleTime: 60_000,
+   899→  })
+   900→
+   901→  // Subjects dropdown
+   902→  const subjectsQuery = useQuery<SubjectItem[]>({
+   903→    queryKey: ['subjects'],
+   904→    queryFn: async () => {
+   905→      const r = await api.get<{ subjects: SubjectItem[] }>('/api/subjects')
+   906→      return r.subjects
+   907→    },
+   908→    staleTime: 60_000,
+   909→  })
+   910→
+   911→  // Main results query — only run once filters are ready.
+   912→  const enabled = !!effSessionId && !!effTermId
+   913→  const resultsQuery = useQuery<ApprovalsResponse>({
+   914→    queryKey: [
+   915→      'approvals',
+   916→      effSessionId,
+   917→      effTermId,
+   918→      classArmId,
+   919→      subjectId,
+   920→      statusFilter,
+   921→    ],
+   922→    queryFn: () =>
+   923→      fetchApprovals({
+   924→        sessionId: effSessionId || undefined,
+   925→        termId: effTermId || undefined,
+   926→        classArmId: classArmId !== 'ALL' ? classArmId : undefined,
+   927→        subjectId: subjectId !== 'ALL' ? subjectId : undefined,
+   928→        status: statusFilter,
+   929→      }),
+   930→    enabled,
+   931→  })
+   932→
+   933→  // Mutations
+   934→  const approveMutation = useMutation({
+   935→    mutationFn: (ids: string[]) => approveResults(ids),
+   936→    onSuccess: (data) => {
+   937→      qc.invalidateQueries({ queryKey: ['approvals'] })
+   938→      setSelected(new Set())
+   939→      const parts = [`Approved ${data.approved}`]
+   940→      if (data.skipped) parts.push(`${data.skipped} skipped`)
+   941→      if (data.missing) parts.push(`${data.missing} not found`)
+   942→      toast.success(parts.join(' · '))
+   943→    },
+   944→    onError: (err: unknown) => {
+   945→      const msg =
+   946→        err instanceof ApiError
+   947→          ? err.message
+   948→          : err instanceof Error
+   949→            ? err.message
+   950→            : 'Failed to approve results'
+   951→      toast.error(msg)
+   952→    },
+   953→    onSettled: () => setBusyIds(new Set()),
+   954→  })
+   955→
+   956→  function handleApproveOne(id: string) {
+   957→    setBusyIds((s) => new Set(s).add(id))
+   958→    approveMutation.mutate([id])
+   959→  }
+   960→  function handleApproveBatch(ids: string[]) {
+   961→    if (ids.length === 0) {
+   962→      toast.error('Select at least one pending result to approve.')
+   963→      return
+   964→    }
+   965→    setBusyIds(new Set(ids))
+   966→    approveMutation.mutate(ids)
+   967→  }
+   968→
+   969→  const unlockMutation = useMutation({
+   970→    mutationFn: (id: string) => unlockResult(id),
+   971→    onSuccess: () => {
+   972→      qc.invalidateQueries({ queryKey: ['approvals'] })
+   973→    },
+   974→    onError: (err: unknown) => {
+   975→      const msg =
+   976→        err instanceof ApiError
+   977→          ? err.message
+   978→          : err instanceof Error
+   979→            ? err.message
+   980→            : 'Failed to reopen result'
+   981→      toast.error(msg)
+   982→    },
+   983→    onSettled: () => setBusyIds(new Set()),
+   984→  })
+   985→
+   986→  function handleReopen(r: ResultRow) {
+   987→    setReopenTarget(r)
+   988→  }
+   989→
+   990→  function handleReturn(r: ResultRow) {
+   991→    setReturnTarget(r)
+   992→  }
+   993→
+   994→  function handleToggleSelect(id: string, checked: boolean) {
+   995→    setSelected((s) => {
+   996→      const next = new Set(s)
+   997→      if (checked) next.add(id)
+   998→      else next.delete(id)
+   999→      return next
+  1000→    })
+  1001→  }
+  1002→
+  1003→  function handleToggleGroup(
+  1004→    group: ReturnType<typeof groupResults>[number],
+  1005→    checked: boolean,
+  1006→  ) {
+  1007→    const ids = group.rows
+  1008→      .filter((r) => r.status === 'SUBMITTED')
+  1009→      .map((r) => r.id)
+  1010→    setSelected((s) => {
+  1011→      const next = new Set(s)
+  1012→      if (checked) ids.forEach((id) => next.add(id))
+  1013→      else ids.forEach((id) => next.delete(id))
+  1014→      return next
+  1015→    })
+  1016→  }
+  1017→
+  1018→  const sessions = sessionsQuery.data ?? []
+  1019→  const termsForSession = effSession?.terms ?? []
+  1020→  const classes = classesQuery.data ?? []
+  1021→  const subjects = subjectsQuery.data ?? []
+  1022→
+  1023→  const results = resultsQuery.data?.results ?? []
+  1024→  const summary = resultsQuery.data?.summary ?? {
+  1025→    pending: 0,
+  1026→    approved: 0,
+  1027→    needsCorrection: 0,
+  1028→    saved: 0,
+  1029→  }
+  1030→  const groups = useMemo(() => groupResults(results), [results])
+  1031→  const selectedPendingCount = results.filter(
+  1032→    (r) => r.status === 'SUBMITTED' && selected.has(r.id),
+  1033→  ).length
+  1034→
+  1035→  return (
+  1036→    <div className="space-y-4 pb-8">
+  1037→      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  1038→        <div>
+  1039→          <h1 className="text-2xl font-bold tracking-tight">Approvals</h1>
+  1040→          <p className="text-sm text-muted-foreground mt-1">
+  1041→            Review submitted results, approve or return them, and reopen
+  1042→            previously-approved entries when teachers need to make changes.
+  1043→          </p>
+  1044→        </div>
+  1045→        {selectedPendingCount > 0 && (
+  1046→          <Button
+  1047→            className="bg-emerald-600 hover:bg-emerald-700 text-white min-h-[44px]"
+  1048→            disabled={approveMutation.isPending}
+  1049→            onClick={() =>
+  1050→              handleApproveBatch(
+  1051→                results
+  1052→                  .filter((r) => r.status === 'SUBMITTED' && selected.has(r.id))
+  1053→                  .map((r) => r.id),
+  1054→              )
+  1055→            }
+  1056→          >
+  1057→            {approveMutation.isPending && (
+  1058→              <Loader2 className="h-4 w-4 animate-spin" />
+  1059→            )}
+  1060→            <Check className="h-4 w-4" />
+  1061→            Approve {selectedPendingCount} selected
+  1062→          </Button>
+  1063→        )}
+  1064→      </div>
+  1065→
+  1066→      {/* Summary cards */}
+  1067→      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1068→        <Card>
+  1069→          <CardContent className="p-4 flex items-center gap-3">
+  1070→            <div className="h-9 w-9 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+  1071→              <Clock className="h-4 w-4" />
+  1072→            </div>
+  1073→            <div>
+  1074→              <p className="text-xs text-muted-foreground">Pending review</p>
+  1075→              <p className="text-xl font-bold">{summary.pending}</p>
+  1076→            </div>
+  1077→          </CardContent>
+  1078→        </Card>
+  1079→        <Card>
+  1080→          <CardContent className="p-4 flex items-center gap-3">
+  1081→            <div className="h-9 w-9 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+  1082→              <CheckCircle2 className="h-4 w-4" />
+  1083→            </div>
+  1084→            <div>
+  1085→              <p className="text-xs text-muted-foreground">Approved</p>
+  1086→              <p className="text-xl font-bold">{summary.approved}</p>
+  1087→            </div>
+  1088→          </CardContent>
+  1089→        </Card>
+  1090→        <Card>
+  1091→          <CardContent className="p-4 flex items-center gap-3">
+  1092→            <div className="h-9 w-9 rounded-md bg-destructive/15 text-destructive flex items-center justify-center shrink-0">
+  1093→              <AlertTriangle className="h-4 w-4" />
+  1094→            </div>
+  1095→            <div>
+  1096→              <p className="text-xs text-muted-foreground">Need correction</p>
+  1097→              <p className="text-xl font-bold">{summary.needsCorrection}</p>
+  1098→            </div>
+  1099→          </CardContent>
+  1100→        </Card>
+  1101→        <Card>
+  1102→          <CardContent className="p-4 flex items-center gap-3">
+  1103→            <div className="h-9 w-9 rounded-md bg-muted text-muted-foreground flex items-center justify-center shrink-0">
+  1104→              <ClipboardCheck className="h-4 w-4" />
+  1105→            </div>
+  1106→            <div>
+  1107→              <p className="text-xs text-muted-foreground">Drafts (saved)</p>
+  1108→              <p className="text-xl font-bold">{summary.saved}</p>
+  1109→            </div>
+  1110→          </CardContent>
+  1111→        </Card>
+  1112→      </div>
+  1113→
+  1114→      {/* Filters */}
+  1115→      <Card>
+  1116→        <CardContent className="p-4">
+  1117→          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+  1118→            <div className="space-y-1.5">
+  1119→              <Label htmlFor="f-session" className="text-xs">
+  1120→                Session
+  1121→              </Label>
+  1122→              <Select
+  1123→                value={effSessionId || undefined}
+  1124→                onValueChange={(v) => {
+  1125→                  setSessionId(v)
+  1126→                  // Reset term to first term of the new session.
+  1127→                  const s = sessions.find((s) => s.id === v)
+  1128→                  setTermId(
+  1129→                    s?.terms.find((t) => t.isActive)?.id ?? s?.terms[0]?.id ?? '',
+  1130→                  )
+  1131→                }}
+  1132→              >
+  1133→                <SelectTrigger id="f-session" className="w-full min-h-[44px]">
+  1134→                  <SelectValue placeholder="Select session" />
+  1135→                </SelectTrigger>
+  1136→                <SelectContent>
+  1137→                  {sessions.map((s) => (
+  1138→                    <SelectItem key={s.id} value={s.id}>
+  1139→                      {s.name}
+  1140→                      {s.isActive ? ' (active)' : ''}
+  1141→                    </SelectItem>
+  1142→                  ))}
+  1143→                </SelectContent>
+  1144→              </Select>
+  1145→            </div>
+  1146→            <div className="space-y-1.5">
+  1147→              <Label htmlFor="f-term" className="text-xs">
+  1148→                Term
+  1149→              </Label>
+  1150→              <Select
+  1151→                value={effTermId || undefined}
+  1152→                onValueChange={setTermId}
+  1153→                disabled={!effSessionId}
+  1154→              >
+  1155→                <SelectTrigger id="f-term" className="w-full min-h-[44px]">
+  1156→                  <SelectValue placeholder="Select term" />
+  1157→                </SelectTrigger>
+  1158→                <SelectContent>
+  1159→                  {termsForSession.map((t) => (
+  1160→                    <SelectItem key={t.id} value={t.id}>
+  1161→                      {t.name}
+  1162→                      {t.isActive ? ' (active)' : ''}
+  1163→                    </SelectItem>
+  1164→                  ))}
+  1165→                </SelectContent>
+  1166→              </Select>
+  1167→            </div>
+  1168→            <div className="space-y-1.5">
+  1169→              <Label htmlFor="f-classarm" className="text-xs">
+  1170→                Class arm
+  1171→              </Label>
+  1172→              <Select value={classArmId} onValueChange={setClassArmId}>
+  1173→                <SelectTrigger id="f-classarm" className="w-full min-h-[44px]">
+  1174→                  <SelectValue placeholder="All classes" />
+  1175→                </SelectTrigger>
+  1176→                <SelectContent>
+  1177→                  <SelectItem value="ALL">All class arms</SelectItem>
+  1178→                  {classes.flatMap((c) =>
+  1179→                    c.arms.map((a) => (
+  1180→                      <SelectItem key={a.id} value={a.id}>
+  1181→                        {a.fullName}
+  1182→                      </SelectItem>
+  1183→                    )),
+  1184→                  )}
+  1185→                </SelectContent>
+  1186→              </Select>
+  1187→            </div>
+  1188→            <div className="space-y-1.5">
+  1189→              <Label htmlFor="f-subject" className="text-xs">
+  1190→                Subject
+  1191→              </Label>
+  1192→              <Select value={subjectId} onValueChange={setSubjectId}>
+  1193→                <SelectTrigger id="f-subject" className="w-full min-h-[44px]">
+  1194→                  <SelectValue placeholder="All subjects" />
+  1195→                </SelectTrigger>
+  1196→                <SelectContent>
+  1197→                  <SelectItem value="ALL">All subjects</SelectItem>
+  1198→                  {subjects.map((s) => (
+  1199→                    <SelectItem key={s.id} value={s.id}>
+  1200→                      {s.name}
+  1201→                    </SelectItem>
+  1202→                  ))}
+  1203→                </SelectContent>
+  1204→              </Select>
+  1205→            </div>
+  1206→            <div className="space-y-1.5">
+  1207→              <Label htmlFor="f-status" className="text-xs">
+  1208→                Status
+  1209→              </Label>
+  1210→              <Select value={statusFilter} onValueChange={setStatusFilter}>
+  1211→                <SelectTrigger id="f-status" className="w-full min-h-[44px]">
+  1212→                  <SelectValue />
+  1213→                </SelectTrigger>
+  1214→                <SelectContent>
+  1215→                  <SelectItem value="SUBMITTED">Pending review</SelectItem>
+  1216→                  <SelectItem value="APPROVED">Approved (to reopen)</SelectItem>
+  1217→                  <SelectItem value="NEEDS_CORRECTION">
+  1218→                    Returned for correction
+  1219→                  </SelectItem>
+  1220→                  <SelectItem value="SAVED">Saved drafts</SelectItem>
+  1221→                  <SelectItem value="ALL">All statuses</SelectItem>
+  1222→                </SelectContent>
+  1223→              </Select>
+  1224→            </div>
+  1225→          </div>
+  1226→          {(classArmId !== 'ALL' ||
+  1227→            subjectId !== 'ALL' ||
+  1228→            statusFilter !== 'SUBMITTED') && (
+  1229→            <div className="mt-3 flex items-center justify-between gap-2">
+  1230→              <p className="text-xs text-muted-foreground">
+  1231→                Showing{' '}
+  1232→                <span className="font-medium text-foreground">
+  1233→                  {statusFilter === 'ALL' ? 'all' : statusFilter}
+  1234→                </span>{' '}
+  1235→                results
+  1236→                {classArmId !== 'ALL' &&
+  1237→                  ` for ${classes.flatMap((c) => c.arms).find((a) => a.id === classArmId)?.fullName ?? ''}`}
+  1238→                {subjectId !== 'ALL' &&
+  1239→                  ` · ${subjects.find((s) => s.id === subjectId)?.name ?? ''}`}
+  1240→                .
+  1241→              </p>
+  1242→              <Button
+  1243→                variant="ghost"
+  1244→                size="sm"
+  1245→                className="h-9"
+  1246→                onClick={() => {
+  1247→                  setClassArmId('ALL')
+  1248→                  setSubjectId('ALL')
+  1249→                  setStatusFilter('SUBMITTED')
+  1250→                }}
+  1251→              >
+  1252→                <RefreshCcw className="h-3.5 w-3.5" />
+  1253→                Reset filters
+  1254→              </Button>
+  1255→            </div>
+  1256→          )}
+  1257→        </CardContent>
+  1258→      </Card>
+  1259→
+  1260→      {/* Results */}
+  1261→      {resultsQuery.isLoading || sessionsQuery.isLoading ? (
+  1262→        <div className="space-y-3">
+  1263→          {Array.from({ length: 3 }).map((_, i) => (
+  1264→            <Skeleton key={i} className="h-32 w-full" />
+  1265→          ))}
+  1266→        </div>
+  1267→      ) : !enabled ? (
+  1268→        <Card>
+  1269→          <CardContent className="p-8 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
+  1270→            <ClipboardCheck className="h-8 w-8" />
+  1271→            <p className="text-sm">
+  1272→              Configure an active academic session and term in School Settings
+  1273→              to review submitted results.
+  1274→            </p>
+  1275→          </CardContent>
+  1276→        </Card>
+  1277→      ) : results.length === 0 ? (
+  1278→        <Card>
+  1279→          <CardContent className="p-8 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
+  1280→            <Search className="h-8 w-8" />
+  1281→            <p className="text-sm">
+  1282→              No results match these filters.{' '}
+  1283→              {statusFilter === 'SUBMITTED'
+  1284→                ? 'No teachers have submitted results pending your review yet.'
+  1285→                : 'Try switching the status filter to see other results.'}
+  1286→            </p>
+  1287→          </CardContent>
+  1288→        </Card>
+  1289→      ) : (
+  1290→        <div className="space-y-4">
+  1291→          {groups.map((g) => (
+  1292→            <ResultSheetGroup
+  1293→              key={g.key}
+  1294→              group={g}
+  1295→              selected={selected}
+  1296→              onToggleSelect={handleToggleSelect}
+  1297→              onToggleGroup={handleToggleGroup}
+  1298→              onApproveOne={handleApproveOne}
+  1299→              onApproveBatch={handleApproveBatch}
+  1300→              onReturn={handleReturn}
+  1301→              onReopen={handleReopen}
+  1302→              busyIds={busyIds}
+  1303→            />
+  1304→          ))}
+  1305→        </div>
+  1306→      )}
+  1307→
+  1308→      {/* Dialogs */}
+  1309→      <ReturnDialog
+  1310→        open={!!returnTarget}
+  1311→        onOpenChange={(o) => !o && setReturnTarget(null)}
+  1312→        result={returnTarget}
+  1313→      />
+  1314→      <ReopenDialog
+  1315→        open={!!reopenTarget}
+  1316→        onOpenChange={(o) => !o && setReopenTarget(null)}
+  1317→        result={reopenTarget}
+  1318→      />
+  1319→    </div>
+  1320→  )
+  1321→}
+  1322→

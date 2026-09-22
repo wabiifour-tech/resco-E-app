@@ -44,8 +44,7 @@ import { ApiError, api } from '@/lib/api-client'
 
 type Assignment = {
   id: string
-  classArmId: string
-  classArmName: string
+  classId: string
   className: string
   subjectId: string
   subjectName: string
@@ -92,7 +91,6 @@ type StudentRow = {
   otherNames: string | null
   active: boolean
   class: { id: string; name: string } | null
-  classArm: { id: string; name: string; fullName: string } | null
 }
 
 type ResultRow = {
@@ -101,7 +99,7 @@ type ResultRow = {
   subjectId: string
   sessionId: string
   termId: string
-  classArmId: string
+  classId: string
   ca: number | null
   exam: number | null
   total: number | null
@@ -200,10 +198,10 @@ async function fetchBootstrap(): Promise<Bootstrap> {
   return api.get<Bootstrap>('/api/results/bootstrap')
 }
 
-async function fetchStudents(armId: string): Promise<StudentRow[]> {
+async function fetchStudents(classId: string): Promise<StudentRow[]> {
   const r = await api.get<{ students: StudentRow[]; count: number }>(
     '/api/results/students',
-    { query: { armId, active: 'true' } },
+    { query: { classId, active: 'true' } },
   )
   return r.students
 }
@@ -211,7 +209,7 @@ async function fetchStudents(armId: string): Promise<StudentRow[]> {
 async function fetchResults(params: {
   sessionId: string
   termId: string
-  classArmId: string
+  classId: string
   subjectId: string
 }): Promise<ResultRow[]> {
   const r = await api.get<{ results: ResultRow[]; count: number }>('/api/results', {
@@ -225,7 +223,7 @@ type SaveBody = {
   subjectId: string
   sessionId: string
   termId: string
-  classArmId: string
+  classId: string
   ca: number
   exam: number
   remarkId: string | null
@@ -239,7 +237,7 @@ async function submitBatch(body: {
   resultIds?: string[]
   studentIds?: string[]
   subjectId?: string
-  classArmId?: string
+  classId?: string
   sessionId?: string
   termId?: string
 }) {
@@ -293,29 +291,29 @@ export function TeacherResultsEntry() {
 
   // Students list
   const studentsQuery = useQuery({
-    queryKey: ['results-students', selectedAssignment?.classArmId],
-    queryFn: () => fetchStudents(selectedAssignment!.classArmId),
-    enabled: !!selectedAssignment?.classArmId && !!activeSession && !!activeTerm,
+    queryKey: ['results-students', selectedAssignment?.classId],
+    queryFn: () => fetchStudents(selectedAssignment!.classId),
+    enabled: !!selectedAssignment?.classId && !!activeSession && !!activeTerm,
   })
 
-  // Existing results for this session/term/arm/subject
+  // Existing results for this session/term/class/subject
   const resultsQuery = useQuery({
     queryKey: [
       'results',
       activeSession?.id,
       activeTerm?.id,
-      selectedAssignment?.classArmId,
+      selectedAssignment?.classId,
       selectedAssignment?.subjectId,
     ],
     queryFn: () =>
       fetchResults({
         sessionId: activeSession!.id,
         termId: activeTerm!.id,
-        classArmId: selectedAssignment!.classArmId,
+        classId: selectedAssignment!.classId,
         subjectId: selectedAssignment!.subjectId,
       }),
     enabled:
-      !!selectedAssignment?.classArmId &&
+      !!selectedAssignment?.classId &&
       !!selectedAssignment?.subjectId &&
       !!activeSession &&
       !!activeTerm,
@@ -393,7 +391,7 @@ export function TeacherResultsEntry() {
         subjectId: selectedAssignment.subjectId,
         sessionId: activeSession.id,
         termId: activeTerm.id,
-        classArmId: selectedAssignment.classArmId,
+        classId: selectedAssignment.classId,
         ca,
         exam,
         remarkId: vars.remarkId,
@@ -419,7 +417,7 @@ export function TeacherResultsEntry() {
 
   // Submit mutation (batch — either all drafts OR by studentIds)
   const submitMutation = useMutation({
-    mutationFn: (vars: { studentIds: string[]; subjectId: string; classArmId: string; sessionId: string; termId: string }) => {
+    mutationFn: (vars: { studentIds: string[]; subjectId: string; classId: string; sessionId: string; termId: string }) => {
       return submitBatch(vars)
     },
     onSuccess: (data) => {
@@ -498,7 +496,7 @@ export function TeacherResultsEntry() {
     submitMutation.mutate({
       studentIds: editable.map((r) => r.studentId),
       subjectId: selectedAssignment.subjectId,
-      classArmId: selectedAssignment.classArmId,
+      classId: selectedAssignment.classId,
       sessionId: activeSession.id,
       termId: activeTerm.id,
     })
@@ -513,7 +511,7 @@ export function TeacherResultsEntry() {
     submitMutation.mutate({
       studentIds: [row.studentId],
       subjectId: selectedAssignment.subjectId,
-      classArmId: selectedAssignment.classArmId,
+      classId: selectedAssignment.classId,
       sessionId: activeSession.id,
       termId: activeTerm.id,
     })
@@ -544,7 +542,7 @@ export function TeacherResultsEntry() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Pick a class arm and subject to enter results for the active term.
+            Pick a class and subject to enter results for the active term.
           </p>
         </div>
         <Alert>
@@ -564,14 +562,14 @@ export function TeacherResultsEntry() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Pick a class arm and subject to enter results for the active term.
+            Pick a class and subject to enter results for the active term.
           </p>
         </div>
         <Alert>
           <Info className="h-4 w-4" />
           <AlertTitle>No assignments yet</AlertTitle>
           <AlertDescription>
-            You have not been assigned to any class arm + subject. Ask the principal
+            You have not been assigned to any class + subject. Ask the principal
             to assign you before you can enter results.
           </AlertDescription>
         </Alert>
@@ -589,7 +587,7 @@ export function TeacherResultsEntry() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Enter Results</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Pick a class arm and subject to enter results for the active term.
+          Pick a class and subject to enter results for the active term.
         </p>
       </div>
 
@@ -610,15 +608,15 @@ export function TeacherResultsEntry() {
       <Card>
         <CardContent className="p-4">
           <div className="space-y-2">
-            <Label htmlFor="assignment-select">Class Arm + Subject</Label>
+            <Label htmlFor="assignment-select">Class + Subject</Label>
             <Select value={assignmentId} onValueChange={setAssignmentId}>
               <SelectTrigger id="assignment-select" className="w-full">
-                <SelectValue placeholder="Select a class arm + subject to enter results" />
+                <SelectValue placeholder="Select a class + subject to enter results" />
               </SelectTrigger>
               <SelectContent>
                 {assignments.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.classArmName} — {a.subjectName}
+                    {a.className} — {a.subjectName}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -639,7 +637,7 @@ export function TeacherResultsEntry() {
               ) : (
                 <span>
                   {students.length} student{students.length === 1 ? '' : 's'} in{' '}
-                  {selectedAssignment.classArmName}
+                  {selectedAssignment.className}
                 </span>
               )}
             </div>
@@ -714,7 +712,7 @@ export function TeacherResultsEntry() {
           ) : rowStates.length === 0 ? (
             <Card>
               <CardContent className="p-10 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
-                <p className="text-sm">No active students in this class arm.</p>
+                <p className="text-sm">No active students in this class.</p>
               </CardContent>
             </Card>
           ) : (
@@ -1113,7 +1111,7 @@ export function TeacherResultsEntry() {
           <CardContent className="p-10 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
             <Info className="h-8 w-8" />
             <p className="text-sm">
-              Select a class arm + subject above to start entering results.
+              Select a class + subject above to start entering results.
             </p>
           </CardContent>
         </Card>

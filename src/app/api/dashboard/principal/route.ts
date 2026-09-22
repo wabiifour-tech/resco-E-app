@@ -5,8 +5,9 @@ import { getActiveSessionAndTerm } from '@/lib/session'
 export const dynamic = 'force-dynamic'
 
 // GET /api/dashboard/principal
-// Principal-only summary: counts of teachers/students/classes/arms/subjects,
+// Principal-only summary: counts of teachers/students/classes/subjects,
 // current session+term, and results-by-status for the active session+term.
+// (NO classArms count — the school structure is FLAT.)
 export async function GET() {
   const u = await requirePrincipal()
   if (!u) {
@@ -16,23 +17,15 @@ export async function GET() {
   const { session, term } = await getActiveSessionAndTerm()
 
   // ── Entity counts ─────────────────────────────────────────────────────────
-  const [
-    teachers,
-    teachersActive,
-    students,
-    studentsActive,
-    classes,
-    classArms,
-    subjects,
-  ] = await Promise.all([
-    db.user.count({ where: { role: 'TEACHER' } }),
-    db.user.count({ where: { role: 'TEACHER', active: true } }),
-    db.student.count(),
-    db.student.count({ where: { active: true } }),
-    db.class.count(),
-    db.classArm.count(),
-    db.subject.count(),
-  ])
+  const [teachers, teachersActive, students, studentsActive, classes, subjects] =
+    await Promise.all([
+      db.user.count({ where: { role: 'TEACHER' } }),
+      db.user.count({ where: { role: 'TEACHER', active: true } }),
+      db.student.count(),
+      db.student.count({ where: { active: true } }),
+      db.class.count(),
+      db.subject.count(),
+    ])
 
   // ── Results by status for the current session+term ────────────────────────
   let saved = 0
@@ -59,7 +52,6 @@ export async function GET() {
       students,
       studentsActive,
       classes,
-      classArms,
       subjects,
     },
     current: {

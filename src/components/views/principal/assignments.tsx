@@ -53,31 +53,30 @@ import { ClipboardList, Plus, Trash2, Search, User, BookOpen } from 'lucide-reac
 
 type Assignment = {
   id: string
-  teacher: {
-    id: string
-    user: { name: string; email?: string | null }
-  }
-  classArm: {
-    id: string
-    fullName: string
-    class?: { name: string; level: number }
-  }
-  subject: { id: string; name: string; code?: string | null }
+  teacherId: string
+  teacherName: string
+  teacherEmail: string
+  classId: string
+  className: string
+  classLevel: number
+  subjectId: string
+  subjectName: string
+  subjectCode: string | null
+  createdAt: string
 }
 
 type Option = {
   id: string
   name?: string
-  fullName?: string
-  className?: string
   level?: number
+  category?: string | null
   email?: string
   code?: string | null
 }
 
 type Options = {
   teachers: Option[]
-  classArms: Option[]
+  classes: Option[]
   subjects: Option[]
 }
 
@@ -98,22 +97,26 @@ export function PrincipalAssignments() {
     if (!q) return assignments
     return assignments.filter(
       (a) =>
-        a.teacher.user.name.toLowerCase().includes(q) ||
-        a.classArm.fullName.toLowerCase().includes(q) ||
-        a.subject.name.toLowerCase().includes(q),
+        a.teacherName.toLowerCase().includes(q) ||
+        a.className.toLowerCase().includes(q) ||
+        a.subjectName.toLowerCase().includes(q),
     )
   }, [assignments, search])
 
-  // Group assignments by classArm for a simple matrix view
+  // Group assignments by class for a simple matrix view
   const matrix = useMemo(() => {
-    const map = new Map<string, { classArm: Assignment['classArm']; subjects: { name: string; teacher: string }[] }>()
+    const map = new Map<
+      string,
+      { classRow: { id: string; name: string }; subjects: { name: string; teacher: string }[] }
+    >()
     for (const a of assignments) {
-      const key = a.classArm.id
-      if (!map.has(key)) map.set(key, { classArm: a.classArm, subjects: [] })
-      map.get(key)!.subjects.push({ name: a.subject.name, teacher: a.teacher.user.name })
+      const key = a.classId
+      if (!map.has(key))
+        map.set(key, { classRow: { id: a.classId, name: a.className }, subjects: [] })
+      map.get(key)!.subjects.push({ name: a.subjectName, teacher: a.teacherName })
     }
     return Array.from(map.values()).sort((x, y) =>
-      x.classArm.fullName.localeCompare(y.classArm.fullName),
+      x.classRow.name.localeCompare(y.classRow.name),
     )
   }, [assignments])
 
@@ -132,7 +135,8 @@ export function PrincipalAssignments() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Teacher Assignments</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Assign teachers to subject + class-arm combinations. A teacher can only enter results for their assigned class-arm + subject.
+            Assign teachers to class + subject combinations. A teacher can only
+            enter results for their assigned class + subject.
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
@@ -147,14 +151,14 @@ export function PrincipalAssignments() {
             <Badge variant="secondary">{assignments.length}</Badge>
           </CardTitle>
           <CardDescription>
-            Each row represents one teacher&apos;s responsibility for a class-arm + subject.
+            Each row represents one teacher&apos;s responsibility for a class + subject.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="relative max-w-sm">
             <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
             <Input
-              placeholder="Search by teacher, arm, or subject…"
+              placeholder="Search by teacher, class, or subject…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -170,7 +174,7 @@ export function PrincipalAssignments() {
             <div className="text-sm text-muted-foreground py-8 text-center">
               {search.trim()
                 ? 'No assignments match your search.'
-                : 'No assignments yet. Assign a teacher to a class-arm + subject to begin.'}
+                : 'No assignments yet. Assign a teacher to a class + subject to begin.'}
             </div>
           ) : (
             <div className="rounded-md border overflow-x-auto">
@@ -178,7 +182,7 @@ export function PrincipalAssignments() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[180px]">Teacher</TableHead>
-                    <TableHead className="min-w-[120px]">Class Arm</TableHead>
+                    <TableHead className="min-w-[120px]">Class</TableHead>
                     <TableHead className="min-w-[180px]">Subject</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -189,26 +193,24 @@ export function PrincipalAssignments() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="h-7 w-7 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-semibold shrink-0">
-                            {a.teacher.user.name.charAt(0).toUpperCase()}
+                            {a.teacherName.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">
-                              {a.teacher.user.name}
+                              {a.teacherName}
                             </p>
-                            {a.teacher.user.email ? (
+                            {a.teacherEmail ? (
                               <p className="text-xs text-muted-foreground truncate">
-                                {a.teacher.user.email}
+                                {a.teacherEmail}
                               </p>
                             ) : null}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="font-mono">
-                          {a.classArm.fullName}
-                        </Badge>
+                        <Badge variant="secondary">{a.className}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm">{a.subject.name}</TableCell>
+                      <TableCell className="text-sm">{a.subjectName}</TableCell>
                       <TableCell>
                         <div className="flex justify-end">
                           <AlertDialog>
@@ -226,9 +228,9 @@ export function PrincipalAssignments() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Remove assignment?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  {a.teacher.user.name} will no longer be able to enter
-                                  <strong> {a.subject.name} </strong>results for
-                                  <strong> {a.classArm.fullName}</strong>.
+                                  {a.teacherName} will no longer be able to enter
+                                  <strong> {a.subjectName} </strong>results for
+                                  <strong> {a.className}</strong>.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -252,28 +254,26 @@ export function PrincipalAssignments() {
         </CardContent>
       </Card>
 
-      {/* Matrix by class arm */}
+      {/* Matrix by class */}
       {matrix.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <BookOpen className="h-4 w-4" /> Subjects by Class Arm
+              <BookOpen className="h-4 w-4" /> Subjects by Class
             </CardTitle>
             <CardDescription>
-              Compact view of all subjects covered in each class arm, and the responsible teacher.
+              Compact view of all subjects covered in each class, and the responsible teacher.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {matrix.map(({ classArm, subjects }) => (
+              {matrix.map(({ classRow, subjects }) => (
                 <div
-                  key={classArm.id}
+                  key={classRow.id}
                   className="rounded-md border p-3 space-y-2"
                 >
                   <div className="flex items-center justify-between">
-                    <Badge variant="outline" className="font-mono">
-                      {classArm.fullName}
-                    </Badge>
+                    <Badge variant="secondary">{classRow.name}</Badge>
                     <span className="text-[10px] text-muted-foreground">
                       {subjects.length} subject{subjects.length === 1 ? '' : 's'}
                     </span>
@@ -286,7 +286,7 @@ export function PrincipalAssignments() {
                         .sort((a, b) => a.name.localeCompare(b.name))
                         .map((s, i) => (
                           <li
-                            key={`${classArm.id}-${i}`}
+                            key={`${classRow.id}-${i}`}
                             className="flex flex-col gap-0.5 border-b last:border-0 pb-1 last:pb-0"
                           >
                             <span className="font-medium">{s.name}</span>
@@ -319,7 +319,7 @@ function CreateAssignmentDialog({
 }) {
   const qc = useQueryClient()
   const [teacherId, setTeacherId] = useState('')
-  const [classArmId, setClassArmId] = useState('')
+  const [classId, setClassId] = useState('')
   const [subjectId, setSubjectId] = useState('')
 
   const { data: options, isLoading } = useQuery({
@@ -330,32 +330,32 @@ function CreateAssignmentDialog({
 
   const mutation = useMutation({
     mutationFn: () => {
-      if (!teacherId || !classArmId || !subjectId) {
-        throw new Error('Please select a teacher, class arm, and subject.')
+      if (!teacherId || !classId || !subjectId) {
+        throw new Error('Please select a teacher, class, and subject.')
       }
-      return api.post('/api/assignments', { teacherId, classArmId, subjectId })
+      return api.post('/api/assignments', { teacherId, classId, subjectId })
     },
     onSuccess: () => {
       toast.success('Teacher assigned')
       qc.invalidateQueries({ queryKey: ['principal', 'assignments'] })
       setTeacherId('')
-      setClassArmId('')
+      setClassId('')
       setSubjectId('')
       onOpenChange(false)
     },
     onError: (e: any) => toast.error(e?.message ?? 'Failed to create assignment'),
   })
 
-  // Sort class arms by level then name for a friendlier dropdown
-  const sortedArms = useMemo(() => {
-    const arms = options?.classArms ?? []
-    return [...arms].sort((a, b) => {
+  // Sort classes by level then name for a friendlier dropdown
+  const sortedClasses = useMemo(() => {
+    const list = options?.classes ?? []
+    return [...list].sort((a, b) => {
       const la = a.level ?? 0
       const lb = b.level ?? 0
       if (la !== lb) return la - lb
-      return (a.fullName ?? '').localeCompare(b.fullName ?? '')
+      return (a.name ?? '').localeCompare(b.name ?? '')
     })
-  }, [options?.classArms])
+  }, [options?.classes])
 
   return (
     <Dialog
@@ -363,7 +363,7 @@ function CreateAssignmentDialog({
       onOpenChange={(v) => {
         if (!v) {
           setTeacherId('')
-          setClassArmId('')
+          setClassId('')
           setSubjectId('')
         }
         onOpenChange(v)
@@ -373,7 +373,7 @@ function CreateAssignmentDialog({
         <DialogHeader>
           <DialogTitle>Assign teacher</DialogTitle>
           <DialogDescription>
-            Pick a teacher, a class arm, and a subject. Each combination must be unique.
+            Pick a teacher, a class, and a subject. Each combination must be unique.
           </DialogDescription>
         </DialogHeader>
 
@@ -383,9 +383,9 @@ function CreateAssignmentDialog({
             <Skeleton className="h-9 w-full" />
             <Skeleton className="h-9 w-full" />
           </div>
-        ) : !options || sortedArms.length === 0 ? (
+        ) : !options || sortedClasses.length === 0 ? (
           <div className="text-sm text-muted-foreground py-4 text-center">
-            You need at least one teacher, class arm, and subject before assigning.
+            You need at least one teacher, class, and subject before assigning.
           </div>
         ) : (
           <div className="space-y-3">
@@ -406,15 +406,15 @@ function CreateAssignmentDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Class Arm</Label>
-              <Select value={classArmId} onValueChange={setClassArmId}>
+              <Label>Class</Label>
+              <Select value={classId} onValueChange={setClassId}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select class arm" />
+                  <SelectValue placeholder="Select class" />
                 </SelectTrigger>
                 <SelectContent>
-                  {sortedArms.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.fullName} {a.className ? `(${a.className})` : ''}
+                  {sortedClasses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -445,7 +445,7 @@ function CreateAssignmentDialog({
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !teacherId || !classArmId || !subjectId}
+            disabled={mutation.isPending || !teacherId || !classId || !subjectId}
           >
             {mutation.isPending ? 'Assigning…' : 'Assign'}
           </Button>

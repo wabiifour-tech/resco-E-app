@@ -4,19 +4,19 @@ import { requirePrincipal } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 
+// RESCO eCard — Return a result for correction (FLAT structure, NO class arms).
+// POST /api/approvals/[id]/return
+//   Body: { reason: string }
+//   Principal only. Sends a SUBMITTED result back to the teacher for
+//   correction — sets status to NEEDS_CORRECTION and audits
+//   RESULT_RETURNED_FOR_CORRECTION with the principal's reason message.
+//
+// Returns 409 if the result is not SUBMITTED.
+
 const returnSchema = z.object({
   reason: z.string().trim().min(1, 'A reason is required').max(500),
 })
 
-/**
- * POST /api/approvals/[id]/return
- *   Body: { reason: string }
- *   Principal only. Sends a SUBMITTED result back to the teacher for
- *   correction — sets status to NEEDS_CORRECTION and audits
- *   RESULT_RETURNED_FOR_CORRECTION with the principal's reason message.
- *
- * Returns 409 if the result is not SUBMITTED.
- */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -43,6 +43,7 @@ export async function POST(
     include: {
       student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
       subject: { select: { id: true, name: true } },
+      class: { select: { id: true, name: true } },
       term: { select: { id: true, name: true } },
       session: { select: { id: true, name: true } },
       enteredBy: { select: { id: true, user: { select: { name: true } } } },
@@ -52,15 +53,6 @@ export async function POST(
   if (!r) {
     return Response.json({ error: 'Result not found' }, { status: 404 })
   }
-
-  // Result.classArmId is a snapshot field (no relation on Result), so we
-  // load the class-arm name separately for the audit context.
-  const classArm = r.classArmId
-    ? await db.classArm.findUnique({
-        where: { id: r.classArmId },
-        select: { id: true, fullName: true },
-      })
-    : null
 
   if (r.status !== 'SUBMITTED') {
     return Response.json(
@@ -90,8 +82,8 @@ export async function POST(
       admissionNumber: r.student.admissionNumber,
       subjectId: r.subjectId,
       subjectName: r.subject.name,
-      classArmId: r.classArmId,
-      classArmName: classArm?.fullName ?? r.classArmId,
+      classId: r.classId,
+      className: r.class?.name ?? r.classId,
       termName: r.term.name,
       sessionName: r.session.name,
       enteredByTeacherId: r.enteredByTeacherId ?? null,

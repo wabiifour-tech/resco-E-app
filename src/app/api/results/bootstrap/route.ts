@@ -6,18 +6,19 @@ import { DEFAULT_GRADE_BOUNDARIES } from '@/lib/results'
 
 export const dynamic = 'force-dynamic'
 
-/**
- * GET /api/results/bootstrap
- *
- * One-call endpoint that returns everything the teacher's results-entry view
- * needs (so the teacher doesn't have to hit multiple principal-only endpoints):
- *   - activeSession, activeTerm
- *   - assignments (for principal: all; for teacher: own, stripped)
- *   - remarks (active only, flat)
- *   - gradeBoundaries
- *
- * Auth: any logged-in user (principal or teacher).
- */
+// RESCO eCard — Bootstrap endpoint (FLAT structure, NO class arms).
+// GET /api/results/bootstrap
+//
+// One-call endpoint that returns everything the teacher's results-entry view
+// needs (so the teacher doesn't have to hit multiple principal-only endpoints):
+//   - activeSession, activeTerm
+//   - assignments (for principal: all; for teacher: own, stripped)
+//   - remarks (active only, flat)
+//   - gradeBoundaries
+//
+// Each assignment includes `class: { id, name }` (NOT classArm).
+// Auth: any logged-in user (principal or teacher).
+
 export async function GET() {
   const u = await getSession()
   if (!u) return Response.json({ error: 'Authentication required' }, { status: 401 })
@@ -30,11 +31,12 @@ export async function GET() {
     const rows = await db.teacherAssignment.findMany({
       include: {
         teacher: { include: { user: { select: { name: true, email: true } } } },
-        classArm: { include: { class: { select: { name: true, level: true } } } },
-        subject: true,
+        class: { select: { id: true, name: true, level: true, category: true } },
+        subject: { select: { id: true, name: true, code: true } },
       },
       orderBy: [
-        { classArm: { fullName: 'asc' } },
+        { class: { level: 'asc' } },
+        { class: { name: 'asc' } },
         { subject: { name: 'asc' } },
       ],
     })
@@ -42,9 +44,10 @@ export async function GET() {
       id: a.id,
       teacherId: a.teacherId,
       teacherName: a.teacher.user.name,
-      classArmId: a.classArmId,
-      classArmName: a.classArm.fullName,
-      className: a.classArm.class.name,
+      classId: a.classId,
+      className: a.class.name,
+      classLevel: a.class.level,
+      classCategory: a.class.category ?? null,
       subjectId: a.subjectId,
       subjectName: a.subject.name,
       subjectCode: a.subject.code,
@@ -55,19 +58,21 @@ export async function GET() {
       const rows = await db.teacherAssignment.findMany({
         where: { teacherId: u.teacherId },
         include: {
-          classArm: { include: { class: { select: { name: true, level: true } } } },
-          subject: true,
+          class: { select: { id: true, name: true, level: true, category: true } },
+          subject: { select: { id: true, name: true, code: true } },
         },
         orderBy: [
-          { classArm: { fullName: 'asc' } },
+          { class: { level: 'asc' } },
+          { class: { name: 'asc' } },
           { subject: { name: 'asc' } },
         ],
       })
       assignments = rows.map((a) => ({
         id: a.id,
-        classArmId: a.classArmId,
-        classArmName: a.classArm.fullName,
-        className: a.classArm.class.name,
+        classId: a.classId,
+        className: a.class.name,
+        classLevel: a.class.level,
+        classCategory: a.class.category ?? null,
         subjectId: a.subjectId,
         subjectName: a.subject.name,
         subjectCode: a.subject.code,

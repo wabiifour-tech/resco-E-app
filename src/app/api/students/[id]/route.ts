@@ -4,6 +4,9 @@ import { db } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 
+// RESCO eCard — Student detail API (FLAT structure, NO class arms).
+// All edits use `classId` (NOT classArmId).
+
 const editSchema = z.object({
   admissionNumber: z.string().trim().min(1, 'Admission number is required').optional(),
   firstName: z.string().trim().min(1, 'First name is required').optional(),
@@ -11,7 +14,6 @@ const editSchema = z.object({
   otherNames: z.string().trim().optional().nullable(),
   gender: z.enum(['MALE', 'FEMALE']).optional().nullable(),
   classId: z.string().min(1, 'Class is required').optional(),
-  classArmId: z.string().optional().nullable(),
   active: z.boolean().optional(),
 })
 
@@ -31,7 +33,6 @@ export async function GET(
     where: { id },
     include: {
       class: { select: { id: true, name: true } },
-      classArm: { select: { id: true, name: true, fullName: true } },
       _count: { select: { results: true } },
     },
   })
@@ -64,25 +65,12 @@ export async function PUT(
   }
   const data = parsed.data
 
-  // Determine final classId/classArmId for validation
   const finalClassId = data.classId ?? existing.classId
-  const finalClassArmId =
-    data.classArmId !== undefined ? data.classArmId : existing.classArmId
 
   if (data.classId) {
     const klass = await db.class.findUnique({ where: { id: data.classId } })
     if (!klass) {
       return Response.json({ error: 'Selected class does not exist' }, { status: 400 })
-    }
-  }
-
-  if (finalClassArmId) {
-    const arm = await db.classArm.findUnique({ where: { id: finalClassArmId } })
-    if (!arm || arm.classId !== finalClassId) {
-      return Response.json(
-        { error: 'Selected arm does not belong to the chosen class' },
-        { status: 400 },
-      )
     }
   }
 
@@ -108,12 +96,10 @@ export async function PUT(
       ...(data.otherNames !== undefined ? { otherNames: data.otherNames } : {}),
       ...(data.gender !== undefined ? { gender: data.gender } : {}),
       ...(data.classId !== undefined ? { classId: data.classId } : {}),
-      ...(data.classArmId !== undefined ? { classArmId: data.classArmId } : {}),
       ...(data.active !== undefined ? { active: data.active } : {}),
     },
     include: {
       class: { select: { id: true, name: true } },
-      classArm: { select: { id: true, name: true, fullName: true } },
     },
   })
 
@@ -131,12 +117,12 @@ export async function PUT(
         ...(data.firstName !== undefined && data.firstName !== existing.firstName ? { firstName: `${existing.firstName} → ${data.firstName}` } : {}),
         ...(data.lastName !== undefined && data.lastName !== existing.lastName ? { lastName: `${existing.lastName} → ${data.lastName}` } : {}),
         ...(data.classId !== undefined && data.classId !== existing.classId ? { classId: `${existing.classId} → ${data.classId}` } : {}),
-        ...(data.classArmId !== undefined ? { classArmId: `${existing.classArmId ?? 'null'} → ${data.classArmId ?? 'null'}` } : {}),
         ...(data.active !== undefined && data.active !== existing.active ? { active: `${existing.active} → ${data.active}` } : {}),
       },
     },
   })
 
+  void finalClassId // referenced for clarity above; no further use needed
   return Response.json({ student: updated })
 }
 
@@ -161,7 +147,7 @@ export async function PATCH(
   const { active } = parsed.data
 
   if (active === existing.active) {
-    return Response.json({ student: existing })
+    return Response.json({ student: { ...existing, class: { id: existing.classId, name: '' } } })
   }
 
   const updated = await db.student.update({

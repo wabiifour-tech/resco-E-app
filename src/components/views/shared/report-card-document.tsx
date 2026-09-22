@@ -58,7 +58,6 @@ type ReportCardData = {
     admissionNumber: string
     fullName: string
     className: string
-    classArmName: string
     gender: string | null
   }
   subjects: SubjectRow[]
@@ -254,9 +253,6 @@ function CardView({ data }: { data: ReportCardData }) {
           </div>
           <div>
             <span className="font-semibold">Class:</span> {st.className}
-          </div>
-          <div>
-            <span className="font-semibold">Class Arm:</span> {st.classArmName}
           </div>
           <div>
             <span className="font-semibold">Term:</span> {data.term.name}

@@ -4,16 +4,16 @@ import { db } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { recomputePositions } from '@/lib/results'
 
-/**
- * POST /api/approvals/[id]/unlock
- *   Principal only. Reopens an APPROVED result so the teacher can edit it
- *   again. Sets status back to SUBMITTED (so it shows as "pending re-review"
- *   in the approvals queue), clears lockedAt, but keeps approvedById /
- *   approvedAt as historical audit info. Emits RESULT_UNLOCKED and
- *   RESULT_REOPENED audit events with full context.
- *
- * Returns 409 if the result is not APPROVED.
- */
+// RESCO eCard — Unlock (reopen) an APPROVED result (FLAT structure, NO class arms).
+// POST /api/approvals/[id]/unlock
+//   Principal only. Reopens an APPROVED result so the teacher can edit it
+//   again. Sets status back to SUBMITTED (so it shows as "pending re-review"
+//   in the approvals queue), clears lockedAt, but keeps approvedById /
+//   approvedAt as historical audit info. Emits RESULT_UNLOCKED and
+//   RESULT_REOPENED audit events with full context.
+//
+// Returns 409 if the result is not APPROVED.
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -30,6 +30,7 @@ export async function POST(
     include: {
       student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
       subject: { select: { id: true, name: true } },
+      class: { select: { id: true, name: true } },
       term: { select: { id: true, name: true } },
       session: { select: { id: true, name: true } },
       enteredBy: { select: { id: true, user: { select: { name: true } } } },
@@ -39,15 +40,6 @@ export async function POST(
   if (!r) {
     return Response.json({ error: 'Result not found' }, { status: 404 })
   }
-
-  // Result.classArmId is a snapshot field (no relation on Result), so we
-  // load the class-arm name separately for the audit context.
-  const classArm = r.classArmId
-    ? await db.classArm.findUnique({
-        where: { id: r.classArmId },
-        select: { id: true, fullName: true },
-      })
-    : null
 
   if (r.status !== 'APPROVED') {
     return Response.json(
@@ -70,8 +62,8 @@ export async function POST(
     admissionNumber: r.student.admissionNumber,
     subjectId: r.subjectId,
     subjectName: r.subject.name,
-    classArmId: r.classArmId,
-    classArmName: classArm?.fullName ?? r.classArmId,
+    classId: r.classId,
+    className: r.class?.name ?? r.classId,
     termName: r.term.name,
     sessionName: r.session.name,
     previousApprovedById: r.approvedById ?? null,
@@ -108,7 +100,7 @@ export async function POST(
   try {
     await recomputePositions({
       subjectId: r.subjectId,
-      classArmId: r.classArmId,
+      classId: r.classId,
       sessionId: r.sessionId,
       termId: r.termId,
     })

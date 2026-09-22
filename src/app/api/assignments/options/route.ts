@@ -2,23 +2,23 @@ import { NextRequest } from 'next/server'
 import { requirePrincipal } from '@/lib/auth'
 import { db } from '@/lib/db'
 
-/**
- * Returns the teachers, class arms, and subjects lists needed to populate
- * the teacher-assignment form. Principal-only.
- */
+// RESCO eCard — Assignment Options (FLAT structure, NO class arms).
+// Returns the teachers, classes, and subjects lists needed to populate the
+// teacher-assignment form. Principal-only.
+
 export async function GET(_req: NextRequest) {
   const u = await requirePrincipal()
   if (!u) return Response.json({ error: 'Principal access required' }, { status: 403 })
 
-  const [teachers, classArms, subjects] = await Promise.all([
+  const [teachers, classes, subjects] = await Promise.all([
     db.teacher.findMany({
       where: { user: { active: true } },
       include: { user: { select: { name: true, email: true, active: true } } },
       orderBy: { user: { name: 'asc' } },
     }),
-    db.classArm.findMany({
-      include: { class: { select: { name: true, level: true } } },
-      orderBy: [{ class: { level: 'asc' } }, { name: 'asc' }],
+    db.class.findMany({
+      orderBy: [{ level: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, level: true, category: true },
     }),
     db.subject.findMany({ orderBy: { name: 'asc' } }),
   ])
@@ -29,11 +29,11 @@ export async function GET(_req: NextRequest) {
       name: t.user.name,
       email: t.user.email,
     })),
-    classArms: classArms.map((a) => ({
-      id: a.id,
-      fullName: a.fullName,
-      className: a.class.name,
-      level: a.class.level,
+    classes: classes.map((c) => ({
+      id: c.id,
+      name: c.name,
+      level: c.level,
+      category: c.category ?? null,
     })),
     subjects: subjects.map((s) => ({ id: s.id, name: s.name, code: s.code })),
   })

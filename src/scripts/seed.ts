@@ -3,9 +3,29 @@ import { hashPassword } from '../lib/password'
 
 const db = new PrismaClient()
 
+// The school's flat class structure (NO class arms).
+// KG → Nursery 1–2 → Primary 1–6 → JSS 1–3 → SS 1–3
+const CLASS_DEFS: { name: string; level: number; category: string }[] = [
+  { name: 'KG', level: 0, category: 'Early Years' },
+  { name: 'Nursery 1', level: 1, category: 'Nursery' },
+  { name: 'Nursery 2', level: 2, category: 'Nursery' },
+  { name: 'Primary 1', level: 3, category: 'Primary' },
+  { name: 'Primary 2', level: 4, category: 'Primary' },
+  { name: 'Primary 3', level: 5, category: 'Primary' },
+  { name: 'Primary 4', level: 6, category: 'Primary' },
+  { name: 'Primary 5', level: 7, category: 'Primary' },
+  { name: 'Primary 6', level: 8, category: 'Primary' },
+  { name: 'JSS 1', level: 9, category: 'Junior Secondary' },
+  { name: 'JSS 2', level: 10, category: 'Junior Secondary' },
+  { name: 'JSS 3', level: 11, category: 'Junior Secondary' },
+  { name: 'SS 1', level: 12, category: 'Senior Secondary' },
+  { name: 'SS 2', level: 13, category: 'Senior Secondary' },
+  { name: 'SS 3', level: 14, category: 'Senior Secondary' },
+]
+
 async function main() {
   // ── School settings (singleton) ────────────────────────────────────────
-  const settings = await db.schoolSetting.upsert({
+  await db.schoolSetting.upsert({
     where: { id: 'singleton' },
     update: {},
     create: {
@@ -36,12 +56,15 @@ async function main() {
     console.log('Principal already exists')
   }
 
-  // ── Demo teacher (for quick testing) ───────────────────────────────────
+  // ── Demo teacher (assigned to JSS 1 — Mathematics) ─────────────────────
   const teacherEmail = 'teacher@resco.edu.ng'
   const teacherPass = 'Teacher@2026'
-  const existingTeacher = await db.user.findUnique({ where: { email: teacherEmail } })
-  if (!existingTeacher) {
-    await db.user.create({
+  let teacherUser = await db.user.findUnique({
+    where: { email: teacherEmail },
+    include: { teacher: true },
+  })
+  if (!teacherUser) {
+    teacherUser = await db.user.create({
       data: {
         email: teacherEmail,
         name: 'Mr. Ade Demo',
@@ -50,39 +73,21 @@ async function main() {
         active: true,
         teacher: { create: {} },
       },
+      include: { teacher: true },
     })
     console.log(`Demo teacher created: ${teacherEmail} / ${teacherPass}`)
   } else {
     console.log('Demo teacher already exists')
   }
 
-  // ── Classes + arms ──────────────────────────────────────────────────────
-  const classDefs = [
-    { name: 'JSS1', level: 1, arms: ['A', 'B'] },
-    { name: 'JSS2', level: 2, arms: ['A', 'B'] },
-    { name: 'JSS3', level: 3, arms: ['A', 'B'] },
-    { name: 'SS1', level: 4, arms: ['A', 'B'] },
-    { name: 'SS2', level: 5, arms: ['A', 'B'] },
-    { name: 'SS3', level: 6, arms: ['A', 'B'] },
-  ]
-  for (const cd of classDefs) {
-    const cls = await db.class.findFirst({ where: { name: cd.name } })
-    let classId: string
-    if (cls) {
-      classId = cls.id
-    } else {
-      const created = await db.class.create({ data: { name: cd.name, level: cd.level } })
-      classId = created.id
-    }
-    for (const armName of cd.arms) {
-      const fullName = `${cd.name}${armName}`
-      const exists = await db.classArm.findFirst({ where: { fullName } })
-      if (!exists) {
-        await db.classArm.create({ data: { classId, name: armName, fullName } })
-      }
+  // ── Classes (flat — no arms) ────────────────────────────────────────────
+  for (const cd of CLASS_DEFS) {
+    const existing = await db.class.findUnique({ where: { name: cd.name } })
+    if (!existing) {
+      await db.class.create({ data: { name: cd.name, level: cd.level, category: cd.category } })
     }
   }
-  console.log('Classes & arms seeded')
+  console.log(`Seeded ${CLASS_DEFS.length} classes (no arms)`)
 
   // ── Subjects ───────────────────────────────────────────────────────────
   const subjects = [
@@ -125,7 +130,7 @@ async function main() {
     console.log('Grade boundaries seeded')
   }
 
-  // ── Remarks ─────────────────────────────────────────────────────────────
+  // ── Remarks ────────────────────────────────────────────────────────────
   const existingRemarks = await db.remark.count()
   if (existingRemarks === 0) {
     const remarks: { category: string; text: string }[] = [
@@ -166,16 +171,52 @@ async function main() {
     }
     console.log('Session & terms seeded')
   }
-  // Set active session/term in settings
   const firstTerm = await db.term.findFirst({ where: { sessionId: session.id, order: 1 } })
   await db.schoolSetting.update({
     where: { id: 'singleton' },
     data: { currentSessionId: session.id, currentTermId: firstTerm?.id ?? null },
   })
 
+  // ── Demo student: John Doe in JSS 1 (for the mandatory calculation test) ──
+  const jss1 = await db.class.findUnique({ where: { name: 'JSS 1' } })
+  if (jss1) {
+    let john = await db.student.findUnique({ where: { admissionNumber: 'RES/2026/001' } })
+    if (!john) {
+      john = await db.student.create({
+        data: {
+          admissionNumber: 'RES/2026/001',
+          firstName: 'John',
+          lastName: 'Doe',
+          gender: 'MALE',
+          classId: jss1.id,
+          active: true,
+        },
+      })
+      console.log('Demo student John Doe created in JSS 1')
+    }
+
+    // Assign Mr. Ade Demo to JSS 1 — Mathematics
+    const maths = await db.subject.findFirst({ where: { name: 'Mathematics' } })
+    if (teacherUser.teacher && maths) {
+      const existingAssignment = await db.teacherAssignment.findFirst({
+        where: { teacherId: teacherUser.teacher.id, classId: jss1.id, subjectId: maths.id },
+      })
+      if (!existingAssignment) {
+        await db.teacherAssignment.create({
+          data: {
+            teacherId: teacherUser.teacher.id,
+            classId: jss1.id,
+            subjectId: maths.id,
+          },
+        })
+        console.log('Assigned Mr. Ade Demo → JSS 1 — Mathematics')
+      }
+    }
+  }
+
   console.log('Seed complete.')
   console.log('Principal login:', principalEmail, '/', principalPass)
-  console.log('Teacher login:', teacherEmail, '/', teacherPass)
+  console.log('Teacher login:', teacherEmail, '/', teacherPass, '(JSS 1 — Mathematics)')
 }
 
 main()

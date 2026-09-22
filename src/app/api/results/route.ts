@@ -16,6 +16,10 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+// RESCO eCard — Results API (FLAT structure, NO class arms).
+// Position is per (subject, Class, session, term). All references use `classId`.
+// Responses include `class: { id, name }` and `priorTotals` for carry-over.
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type PriorTotals = {
@@ -29,7 +33,7 @@ type ResultRow = {
   subjectId: string
   sessionId: string
   termId: string
-  classArmId: string
+  classId: string
   ca: number | null
   exam: number | null
   total: number | null
@@ -54,7 +58,7 @@ type ResultRow = {
   subject: { id: string; name: string; code: string | null }
   session: { id: string; name: string }
   term: { id: string; name: string; order: number; sessionId: string }
-  classArm: { id: string; fullName: string }
+  class: { id: string; name: string }
   priorTotals: PriorTotals
   cumulative: number | null
 }
@@ -62,7 +66,7 @@ type ResultRow = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Fetch a teacher's authorized (classArmId, subjectId) pairs as a Set
+ * Fetch a teacher's authorized (classId, subjectId) pairs as a Set
  * for fast filtering. Returns null for principals (no scoping).
  */
 async function teacherScope(
@@ -71,9 +75,9 @@ async function teacherScope(
   if (u.role !== 'TEACHER' || !u.teacherId) return null
   const assignments = await db.teacherAssignment.findMany({
     where: { teacherId: u.teacherId },
-    select: { classArmId: true, subjectId: true },
+    select: { classId: true, subjectId: true },
   })
-  return new Set(assignments.map((a) => `${a.classArmId}|${a.subjectId}`))
+  return new Set(assignments.map((a) => `${a.classId}|${a.subjectId}`))
 }
 
 /** Get prior term totals for a result (for carry-over display + cumulative). */
@@ -137,20 +141,19 @@ async function serialize(row: any): Promise<ResultRow> {
     termOrder,
   })
   const cumulative = computeCumulativeFor(termOrder, row.total, priors)
-  // Result has no classArm relation (only classArmId), so fetch separately.
-  const classArm = row.classArmId
-    ? await db.classArm.findUnique({
-        where: { id: row.classArmId },
-        select: { id: true, fullName: true },
-      })
-    : null
+  // Result has a `class` relation — read directly from the row (id + name).
+  const cls = row.class
+    ? { id: row.class.id, name: row.class.name }
+    : row.classId
+      ? { id: row.classId, name: row.classId }
+      : { id: '', name: '—' }
   return {
     id: row.id,
     studentId: row.studentId,
     subjectId: row.subjectId,
     sessionId: row.sessionId,
     termId: row.termId,
-    classArmId: row.classArmId,
+    classId: row.classId,
     ca: row.ca,
     exam: row.exam,
     total: row.total,
@@ -192,9 +195,7 @@ async function serialize(row: any): Promise<ResultRow> {
       order: row.term.order,
       sessionId: row.term.sessionId,
     },
-    classArm: classArm
-      ? { id: classArm.id, fullName: classArm.fullName }
-      : { id: row.classArmId, fullName: row.classArmId },
+    class: cls,
     priorTotals: priors,
     cumulative,
   }
@@ -209,7 +210,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const sessionId = url.searchParams.get('sessionId') ?? undefined
   const termId = url.searchParams.get('termId') ?? undefined
-  const classArmId = url.searchParams.get('classArmId') ?? undefined
+  const classId = url.searchParams.get('classId') ?? undefined
   const subjectId = url.searchParams.get('subjectId') ?? undefined
   const studentId = url.searchParams.get('studentId') ?? undefined
   const status = url.searchParams.get('status') ?? undefined
@@ -217,18 +218,18 @@ export async function GET(req: NextRequest) {
   const where: any = {}
   if (sessionId) where.sessionId = sessionId
   if (termId) where.termId = termId
-  if (classArmId) where.classArmId = classArmId
+  if (classId) where.classId = classId
   if (subjectId) where.subjectId = subjectId
   if (studentId) where.studentId = studentId
   if (status) where.status = status
 
-  // Teacher scoping: only their assigned (classArmId, subjectId) pairs
+  // Teacher scoping: only their assigned (classId, subjectId) pairs
   const scope = await teacherScope(u)
   if (scope) {
     if (scope.size === 0) return Response.json({ results: [], count: 0 })
     const orClauses = Array.from(scope).map((s) => {
-      const [armId, subId] = s.split('|')
-      return { classArmId: armId, subjectId: subId }
+      const [clsId, subId] = s.split('|')
+      return { classId: clsId, subjectId: subId }
     })
     where.OR = orClauses
   }
@@ -248,11 +249,12 @@ export async function GET(req: NextRequest) {
       subject: { select: { id: true, name: true, code: true } },
       session: { select: { id: true, name: true } },
       term: { select: { id: true, name: true, order: true, sessionId: true } },
+      class: { select: { id: true, name: true } },
       remark: { select: { id: true, category: true, text: true } },
       enteredBy: { select: { id: true, user: { select: { name: true } } } },
     },
     orderBy: [
-      { classArmId: 'asc' },
+      { classId: 'asc' },
       { subject: { name: 'asc' } },
       { student: { lastName: 'asc' } },
       { student: { firstName: 'asc' } },
@@ -270,7 +272,7 @@ const saveSchema = z.object({
   subjectId: z.string().min(1, 'Subject is required'),
   sessionId: z.string().min(1, 'Session is required'),
   termId: z.string().min(1, 'Term is required'),
-  classArmId: z.string().min(1, 'Class arm is required'),
+  classId: z.string().min(1, 'Class is required'),
   ca: z.number({ invalid_type_error: 'CA must be a number' }).min(0).max(CA_MAX),
   exam: z.number({ invalid_type_error: 'Examination must be a number' }).min(0).max(EXAM_MAX),
   remarkId: z.string().nullable().optional(),
@@ -288,14 +290,14 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     )
   }
-  const { studentId, subjectId, sessionId, termId, classArmId, ca, exam, remarkId } =
+  const { studentId, subjectId, sessionId, termId, classId, ca, exam, remarkId } =
     parsed.data
 
-  // Authorization: teacher must own this (classArm, subject). Principal passes.
-  const authU = await requireTeacherAuthorized(classArmId, subjectId)
+  // Authorization: teacher must own this (class, subject). Principal passes.
+  const authU = await requireTeacherAuthorized(classId, subjectId)
   if (!authU) {
     return Response.json(
-      { error: 'You are not assigned to this class arm and subject' },
+      { error: 'You are not assigned to this class and subject' },
       { status: 403 },
     )
   }
@@ -304,28 +306,28 @@ export async function POST(req: NextRequest) {
   const scoreErr = validateScore(ca, exam)
   if (scoreErr) return Response.json({ error: scoreErr }, { status: 400 })
 
-  // Verify FK existence + student is in the class arm
-  const [student, subject, session, term, classArm] = await Promise.all([
+  // Verify FK existence + student is in the class
+  const [student, subject, session, term, klass] = await Promise.all([
     db.student.findUnique({ where: { id: studentId } }),
     db.subject.findUnique({ where: { id: subjectId } }),
     db.academicSession.findUnique({ where: { id: sessionId } }),
     db.term.findUnique({ where: { id: termId } }),
-    db.classArm.findUnique({ where: { id: classArmId } }),
+    db.class.findUnique({ where: { id: classId } }),
   ])
   if (!student) return Response.json({ error: 'Student not found' }, { status: 400 })
   if (!subject) return Response.json({ error: 'Subject not found' }, { status: 400 })
   if (!session) return Response.json({ error: 'Session not found' }, { status: 400 })
   if (!term) return Response.json({ error: 'Term not found' }, { status: 400 })
-  if (!classArm) return Response.json({ error: 'Class arm not found' }, { status: 400 })
+  if (!klass) return Response.json({ error: 'Class not found' }, { status: 400 })
   if (term.sessionId !== sessionId) {
     return Response.json(
       { error: 'Term does not belong to the selected session' },
       { status: 400 },
     )
   }
-  if (student.classArmId !== classArmId) {
+  if (student.classId !== classId) {
     return Response.json(
-      { error: 'Student is not in the selected class arm' },
+      { error: 'Student is not in the selected class' },
       { status: 400 },
     )
   }
@@ -378,7 +380,7 @@ export async function POST(req: NextRequest) {
       subjectId,
       sessionId,
       termId,
-      classArmId,
+      classId,
       ca,
       exam,
       total,
@@ -388,7 +390,7 @@ export async function POST(req: NextRequest) {
       enteredByTeacherId: authU.teacherId,
     },
     update: {
-      classArmId, // snapshot might change if student reassigned
+      classId, // snapshot might change if student reassigned
       ca,
       exam,
       total,
@@ -410,13 +412,14 @@ export async function POST(req: NextRequest) {
       subject: { select: { id: true, name: true, code: true } },
       session: { select: { id: true, name: true } },
       term: { select: { id: true, name: true, order: true, sessionId: true } },
+      class: { select: { id: true, name: true } },
       remark: { select: { id: true, category: true, text: true } },
       enteredBy: { select: { id: true, user: { select: { name: true } } } },
     },
   })
 
-  // Recompute positions for the affected (subject, classArm, session, term) group
-  await recomputePositions({ subjectId, classArmId, sessionId, termId })
+  // Recompute positions for the affected (subject, class, session, term) group
+  await recomputePositions({ subjectId, classId, sessionId, termId })
 
   // Audit
   const ctx = {
@@ -427,8 +430,8 @@ export async function POST(req: NextRequest) {
     subjectName: subject.name,
     sessionId,
     termId,
-    classArmId,
-    classArmName: classArm.fullName,
+    classId,
+    className: klass.name,
     ca,
     exam,
     total,

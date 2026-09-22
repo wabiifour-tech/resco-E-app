@@ -28,8 +28,7 @@ import { api } from '@/lib/api-client'
 
 type Assignment = {
   id: string
-  classArmId: string
-  classArmName: string
+  classId: string
   className: string
   subjectId: string
   subjectName: string
@@ -58,10 +57,8 @@ type StudentRow = {
   otherNames: string | null
   gender: string | null
   classId: string
-  classArmId: string | null
   active: boolean
   class: { id: string; name: string } | null
-  classArm: { id: string; name: string; fullName: string } | null
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -70,10 +67,10 @@ async function fetchBootstrap(): Promise<Bootstrap> {
   return api.get<Bootstrap>('/api/results/bootstrap')
 }
 
-async function fetchStudents(armId: string, q: string): Promise<StudentRow[]> {
+async function fetchStudents(classId: string, q: string): Promise<StudentRow[]> {
   const r = await api.get<{ students: StudentRow[]; count: number }>(
     '/api/results/students',
-    { query: { armId, active: 'true', q: q || undefined } },
+    { query: { classId, active: 'true', q: q || undefined } },
   )
   return r.students
 }
@@ -90,34 +87,34 @@ export function TeacherMyStudents() {
   })
 
   const assignments = bootQuery.data?.assignments ?? []
-  const armIds = useMemo(
-    () => Array.from(new Set(assignments.map((a) => a.classArmId))),
+  const classIds = useMemo(
+    () => Array.from(new Set(assignments.map((a) => a.classId))),
     [assignments],
   )
 
-  // Fetch students for each arm in parallel
+  // Fetch students for each class in parallel
   const studentsQueries = useQuery({
-    queryKey: ['teacher-students-by-arm', armIds.join('|'), q],
+    queryKey: ['teacher-students-by-class', classIds.join('|'), q],
     queryFn: async () => {
       const results = await Promise.all(
-        armIds.map((armId) =>
-          fetchStudents(armId, q).then((students) => ({
-            armId,
+        classIds.map((classId) =>
+          fetchStudents(classId, q).then((students) => ({
+            classId,
             students,
           })),
         ),
       )
       return results
     },
-    enabled: armIds.length > 0,
+    enabled: classIds.length > 0,
   })
 
-  const armLookup = useMemo(() => {
+  const classLookup = useMemo(() => {
     const map = new Map<string, Assignment[]>()
     for (const a of assignments) {
-      const list = map.get(a.classArmId) ?? []
+      const list = map.get(a.classId) ?? []
       list.push(a)
-      map.set(a.classArmId, list)
+      map.set(a.classId, list)
     }
     return map
   }, [assignments])
@@ -130,19 +127,17 @@ export function TeacherMyStudents() {
   // Group + flatten for display
   const grouped = useMemo(() => {
     if (!studentsQueries.data) return []
-    return studentsQueries.data.map(({ armId, students }) => {
-      const armAssignments = armLookup.get(armId) ?? []
-      const armName = armAssignments[0]?.classArmName ?? armId
-      const className = armAssignments[0]?.className ?? ''
+    return studentsQueries.data.map(({ classId, students }) => {
+      const classAssignments = classLookup.get(classId) ?? []
+      const className = classAssignments[0]?.className ?? classId
       return {
-        armId,
-        armName,
+        classId,
         className,
-        subjects: armAssignments.map((a) => a.subjectName),
+        subjects: classAssignments.map((a) => a.subjectName),
         students,
       }
     })
-  }, [studentsQueries.data, armLookup])
+  }, [studentsQueries.data, classLookup])
 
   const totalStudents = grouped.reduce((sum, g) => sum + g.students.length, 0)
 
@@ -169,14 +164,14 @@ export function TeacherMyStudents() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">My Students</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Students in the class arms you teach.
+            Students in the classes you teach.
           </p>
         </div>
         <Card>
           <CardContent className="p-10 flex flex-col items-center justify-center text-center text-muted-foreground gap-2">
             <GraduationCap className="h-8 w-8" />
             <p className="text-sm">
-              You have no class arm assignments yet. Ask the principal to assign you to a class arm.
+              You have no class assignments yet. Ask the principal to assign you to a class.
             </p>
           </CardContent>
         </Card>
@@ -189,7 +184,7 @@ export function TeacherMyStudents() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">My Students</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Students in the class arms you teach. Read-only — ask the principal to manage student records.
+          Students in the classes you teach. Read-only — ask the principal to manage student records.
         </p>
       </div>
 
@@ -219,12 +214,12 @@ export function TeacherMyStudents() {
         ) : (
           <span>
             {totalStudents} active student{totalStudents === 1 ? '' : 's'} across{' '}
-            {grouped.length} class arm{grouped.length === 1 ? '' : 's'}.
+            {grouped.length} class{grouped.length === 1 ? '' : 'es'}.
           </span>
         )}
       </div>
 
-      {/* Per-arm student lists */}
+      {/* Per-class student lists */}
       {studentsQueries.isLoading ? (
         <Card>
           <CardContent className="p-4 space-y-3">
@@ -242,13 +237,11 @@ export function TeacherMyStudents() {
         </Card>
       ) : (
         grouped.map((g) => (
-          <Card key={g.armId}>
+          <Card key={g.classId}>
             <CardContent className="p-0">
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="font-mono">
-                    {g.armName}
-                  </Badge>
+                  <Badge variant="secondary">{g.className}</Badge>
                   <span className="text-sm text-muted-foreground">
                     {g.students.length} active student{g.students.length === 1 ? '' : 's'}
                   </span>
@@ -261,7 +254,7 @@ export function TeacherMyStudents() {
 
               {g.students.length === 0 ? (
                 <div className="p-6 text-sm text-muted-foreground text-center">
-                  No active students in this class arm.
+                  No active students in this class.
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -271,7 +264,7 @@ export function TeacherMyStudents() {
                         <TableHead className="min-w-[140px]">Adm. No.</TableHead>
                         <TableHead className="min-w-[200px]">Name</TableHead>
                         <TableHead className="min-w-[100px]">Gender</TableHead>
-                        <TableHead className="min-w-[120px]">Class / Arm</TableHead>
+                        <TableHead className="min-w-[120px]">Class</TableHead>
                         <TableHead className="min-w-[100px]">Status</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -294,20 +287,11 @@ export function TeacherMyStudents() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2">
-                                {s.class && (
-                                  <Badge variant="secondary">{s.class.name}</Badge>
-                                )}
-                                {s.classArm ? (
-                                  <Badge variant="outline">
-                                    {s.classArm.fullName}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">
-                                    No arm
-                                  </span>
-                                )}
-                              </div>
+                              {s.class ? (
+                                <Badge variant="secondary">{s.class.name}</Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
                             </TableCell>
                             <TableCell>
                               {s.active ? (

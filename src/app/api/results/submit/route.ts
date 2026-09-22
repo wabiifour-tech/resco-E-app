@@ -6,13 +6,16 @@ import { logAudit } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
 
-// Body: either { resultIds: string[] } OR { studentIds, subjectId, classArmId, sessionId, termId }
+// RESCO eCard — Bulk submit results (FLAT structure, NO class arms).
+// Body: either { resultIds: string[] }
+//      OR { studentIds, subjectId, classId, sessionId, termId }
+
 const submitSchema = z
   .object({
     resultIds: z.array(z.string().min(1)).optional(),
     studentIds: z.array(z.string().min(1)).optional(),
     subjectId: z.string().optional(),
-    classArmId: z.string().optional(),
+    classId: z.string().optional(),
     sessionId: z.string().optional(),
     termId: z.string().optional(),
   })
@@ -22,7 +25,7 @@ const submitSchema = z
       data.studentIds &&
       data.studentIds.length > 0 &&
       data.subjectId &&
-      data.classArmId &&
+      data.classId &&
       data.sessionId &&
       data.termId
     ) {
@@ -31,7 +34,7 @@ const submitSchema = z
     ctx.addIssue({
       code: 'custom',
       message:
-        'Provide either { resultIds: [...] } or { studentIds, subjectId, classArmId, sessionId, termId }',
+        'Provide either { resultIds: [...] } or { studentIds, subjectId, classId, sessionId, termId }',
     })
   })
 
@@ -56,7 +59,7 @@ export async function POST(req: NextRequest) {
     subjectId: string
     sessionId: string
     termId: string
-    classArmId: string
+    classId: string
     status: string
   }[] = []
 
@@ -69,7 +72,7 @@ export async function POST(req: NextRequest) {
         subjectId: true,
         sessionId: true,
         termId: true,
-        classArmId: true,
+        classId: true,
         status: true,
       },
     })
@@ -78,7 +81,7 @@ export async function POST(req: NextRequest) {
       where: {
         studentId: { in: data.studentIds! },
         subjectId: data.subjectId,
-        classArmId: data.classArmId,
+        classId: data.classId,
         sessionId: data.sessionId,
         termId: data.termId,
       },
@@ -88,7 +91,7 @@ export async function POST(req: NextRequest) {
         subjectId: true,
         sessionId: true,
         termId: true,
-        classArmId: true,
+        classId: true,
         status: true,
       },
     })
@@ -113,7 +116,7 @@ export async function POST(req: NextRequest) {
   for (const row of targetRows) {
     // Auth check (teacher must be assigned; principal passes)
     if (u.role === 'TEACHER') {
-      const ok = await requireTeacherAuthorized(row.classArmId, row.subjectId)
+      const ok = await requireTeacherAuthorized(row.classId, row.subjectId)
       if (!ok) {
         rejected.push({ id: row.id, reason: 'Not authorized' })
         continue
@@ -160,7 +163,7 @@ export async function POST(req: NextRequest) {
         subjectId: row.subjectId,
         sessionId: row.sessionId,
         termId: row.termId,
-        classArmId: row.classArmId,
+        classId: row.classId,
       },
     })
   }

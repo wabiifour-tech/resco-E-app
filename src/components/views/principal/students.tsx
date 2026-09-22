@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -51,7 +51,7 @@ type ClassRow = {
   id: string
   name: string
   level: number
-  arms: { id: string; name: string; fullName: string }[]
+  category?: string | null
 }
 
 type ClassesResponse = { classes: ClassRow[] }
@@ -64,10 +64,8 @@ type StudentRow = {
   otherNames: string | null
   gender: string | null
   classId: string
-  classArmId: string | null
   active: boolean
   class: { id: string; name: string }
-  classArm: { id: string; name: string; fullName: string } | null
 }
 
 type StudentsResponse = { students: StudentRow[]; count: number }
@@ -84,14 +82,12 @@ async function fetchClasses(): Promise<ClassRow[]> {
 async function fetchStudents(params: {
   q: string
   classId: string
-  armId: string
   active: string
 }): Promise<StudentsResponse> {
   return api.get<StudentsResponse>('/api/students', {
     query: {
       q: params.q || undefined,
       classId: params.classId || undefined,
-      armId: params.armId || undefined,
       active: params.active || undefined,
     },
   })
@@ -104,7 +100,6 @@ type CreatePayload = {
   otherNames: string | null
   gender: Gender | null
   classId: string
-  classArmId: string | null
   active: boolean
 }
 
@@ -132,7 +127,6 @@ type FormData = {
   otherNames: string
   gender: Gender | null
   classId: string
-  classArmId: string | null
   active: boolean
 }
 
@@ -184,14 +178,8 @@ function StudentFormBody({ mode, student, onOpenChange }: StudentFormBodyProps) 
     otherNames: student?.otherNames ?? '',
     gender: student?.gender as Gender | null,
     classId: student?.classId ?? '',
-    classArmId: student?.classArmId ?? null,
     active: student?.active ?? true,
   })
-
-  const arms = useMemo(() => {
-    if (!form.classId) return []
-    return classes?.find((c) => c.id === form.classId)?.arms ?? []
-  }, [form.classId, classes])
 
   const mutation = useMutation({
     mutationFn: async (data: FormData) => {
@@ -202,7 +190,6 @@ function StudentFormBody({ mode, student, onOpenChange }: StudentFormBodyProps) 
         otherNames: data.otherNames.trim() || null,
         gender: data.gender,
         classId: data.classId,
-        classArmId: data.classArmId || null,
         active: data.active,
       }
       if (isCreate) return createStudent(payload)
@@ -233,6 +220,12 @@ function StudentFormBody({ mode, student, onOpenChange }: StudentFormBodyProps) 
     if (!form.classId) return toast.error('Class is required')
     mutation.mutate(form)
   }
+
+  // Sort classes by level then name for a friendlier dropdown
+  const sortedClasses = [...(classes ?? [])].sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level
+    return a.name.localeCompare(b.name)
+  })
 
   return (
     <>
@@ -324,65 +317,36 @@ function StudentFormBody({ mode, student, onOpenChange }: StudentFormBodyProps) 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="s-class">Class</Label>
-            <Select
-              value={form.classId || '__none__'}
-              onValueChange={(v) =>
-                setForm({
-                  ...form,
-                  classId: v === '__none__' ? '' : v,
-                  classArmId: null,
-                })
-              }
-              disabled={classesLoading}
-            >
-              <SelectTrigger id="s-class" className="w-full">
-                <SelectValue
-                  placeholder={
-                    classesLoading ? 'Loading…' : 'Select a class'
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {classes?.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="s-arm">Class arm (optional)</Label>
-            <Select
-              value={form.classArmId ?? '__none__'}
-              onValueChange={(v) =>
-                setForm({
-                  ...form,
-                  classArmId: v === '__none__' ? null : v,
-                })
-              }
-              disabled={!form.classId}
-            >
-              <SelectTrigger id="s-arm" className="w-full">
-                <SelectValue
-                  placeholder={
-                    !form.classId ? 'Pick a class first' : 'No specific arm'
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">No specific arm</SelectItem>
-                {arms.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-2">
+          <Label htmlFor="s-class">Class</Label>
+          <Select
+            value={form.classId || '__none__'}
+            onValueChange={(v) =>
+              setForm({
+                ...form,
+                classId: v === '__none__' ? '' : v,
+              })
+            }
+            disabled={classesLoading}
+          >
+            <SelectTrigger id="s-class" className="w-full">
+              <SelectValue
+                placeholder={
+                  classesLoading ? 'Loading…' : 'Select a class'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {sortedClasses.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Students belong directly to a class.
+          </p>
         </div>
 
         <div className="flex items-center justify-between rounded-md border p-3">
@@ -428,7 +392,6 @@ export function PrincipalStudents() {
   const qc = useQueryClient()
   const [q, setQ] = useState('')
   const [classFilter, setClassFilter] = useState<string>('all')
-  const [armFilter, setArmFilter] = useState<string>('all')
   const [activeFilter, setActiveFilter] = useState<string>('all')
   const [searchInput, setSearchInput] = useState('')
 
@@ -440,18 +403,12 @@ export function PrincipalStudents() {
     queryFn: fetchClasses,
   })
 
-  const filterArms = useMemo(() => {
-    if (!classFilter || classFilter === 'all') return []
-    return classesData?.find((c) => c.id === classFilter)?.arms ?? []
-  }, [classFilter, classesData])
-
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['students', q, classFilter, armFilter, activeFilter],
+    queryKey: ['students', q, classFilter, activeFilter],
     queryFn: () =>
       fetchStudents({
         q,
         classId: classFilter === 'all' ? '' : classFilter,
-        armId: armFilter === 'all' ? '' : armFilter,
         active: activeFilter,
       }),
   })
@@ -461,13 +418,12 @@ export function PrincipalStudents() {
       toggleStudent(vars.id, vars.active),
     onMutate: async (vars) => {
       await qc.cancelQueries({
-        queryKey: ['students', q, classFilter, armFilter, activeFilter],
+        queryKey: ['students', q, classFilter, activeFilter],
       })
       const prev = qc.getQueryData<StudentsResponse>([
         'students',
         q,
         classFilter,
-        armFilter,
         activeFilter,
       ])
       if (prev) {
@@ -478,7 +434,7 @@ export function PrincipalStudents() {
           ),
         }
         qc.setQueryData<StudentsResponse>(
-          ['students', q, classFilter, armFilter, activeFilter],
+          ['students', q, classFilter, activeFilter],
           next,
         )
       }
@@ -503,12 +459,11 @@ export function PrincipalStudents() {
     setQ(searchInput.trim())
   }
 
-  function handleClassFilterChange(v: string) {
-    setClassFilter(v)
-    setArmFilter('all')
-  }
-
   const students = data?.students ?? []
+  const sortedClasses = [...(classesData ?? [])].sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level
+    return a.name.localeCompare(b.name)
+  })
 
   return (
     <div className="space-y-4">
@@ -543,40 +498,19 @@ export function PrincipalStudents() {
                 aria-label="Search students"
               />
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:flex lg:items-center">
-              <Select value={classFilter} onValueChange={handleClassFilterChange}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:items-center">
+              <Select value={classFilter} onValueChange={setClassFilter}>
                 <SelectTrigger
-                  className="sm:w-40 lg:w-36"
+                  className="sm:w-44 lg:w-40"
                   aria-label="Filter by class"
                 >
                   <SelectValue placeholder="All classes" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All classes</SelectItem>
-                  {classesData?.map((c) => (
+                  {sortedClasses.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select
-                value={armFilter}
-                onValueChange={setArmFilter}
-                disabled={classFilter === 'all' || filterArms.length === 0}
-              >
-                <SelectTrigger
-                  className="sm:w-40 lg:w-36"
-                  aria-label="Filter by arm"
-                >
-                  <SelectValue placeholder="All arms" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All arms</SelectItem>
-                  {filterArms.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.fullName}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -587,7 +521,7 @@ export function PrincipalStudents() {
                 onValueChange={setActiveFilter}
               >
                 <SelectTrigger
-                  className="sm:w-40 lg:w-36"
+                  className="sm:w-44 lg:w-40"
                   aria-label="Filter by status"
                 >
                   <SelectValue placeholder="All statuses" />
@@ -618,7 +552,7 @@ export function PrincipalStudents() {
               ) : (
                 <>
                   {students.length} student{students.length === 1 ? '' : 's'}
-                  {q || classFilter !== 'all' || armFilter !== 'all' || activeFilter !== 'all'
+                  {q || classFilter !== 'all' || activeFilter !== 'all'
                     ? ' matched'
                     : ' total'}
                 </>
@@ -645,7 +579,7 @@ export function PrincipalStudents() {
                     <TableHead>Adm. No.</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Gender</TableHead>
-                    <TableHead>Class / Arm</TableHead>
+                    <TableHead>Class</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -669,18 +603,7 @@ export function PrincipalStudents() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{s.class.name}</Badge>
-                            {s.classArm ? (
-                              <Badge variant="outline">
-                                {s.classArm.fullName}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                No arm
-                              </span>
-                            )}
-                          </div>
+                          <Badge variant="secondary">{s.class.name}</Badge>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

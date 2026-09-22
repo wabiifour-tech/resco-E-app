@@ -56,20 +56,22 @@ export async function loadGradeBoundaries() {
 }
 
 /**
- * Recompute positions for a subject + classArm + session + term.
+ * Recompute positions for a subject + Class + session + term.
+ * Position is calculated among students in the same CLASS for the subject
+ * (NO class arms — the school structure is flat).
  * Tie-rank method (standard competition ranking "1224"): equal totals share a rank,
  * next rank skips. e.g. 90→1, 85→2, 85→2, 78→4
  */
 export async function recomputePositions(opts: {
   subjectId: string
-  classArmId: string
+  classId: string
   sessionId: string
   termId: string
 }): Promise<void> {
   const results = await db.result.findMany({
     where: {
       subjectId: opts.subjectId,
-      classArmId: opts.classArmId,
+      classId: opts.classId,
       sessionId: opts.sessionId,
       termId: opts.termId,
       total: { not: null },

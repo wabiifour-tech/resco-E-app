@@ -62,7 +62,7 @@ type ClassRow = {
   id: string
   name: string
   level: number
-  arms: { id: string; name: string; fullName: string }[]
+  category?: string | null
 }
 
 type StudentRow = {
@@ -74,7 +74,6 @@ type StudentRow = {
   gender: string | null
   active: boolean
   class: { id: string; name: string } | null
-  classArm: { id: string; name: string; fullName: string } | null
 }
 
 type BulkStudent = {
@@ -98,22 +97,22 @@ async function fetchClasses(): Promise<ClassRow[]> {
   return r.classes
 }
 
-async function fetchStudentsForArm(armId: string): Promise<StudentRow[]> {
+async function fetchStudentsForClass(classId: string): Promise<StudentRow[]> {
   const r = await api.get<{ students: StudentRow[]; count: number }>(
     '/api/students',
-    { query: { armId, active: 'true' } },
+    { query: { classId, active: 'true' } },
   )
   return r.students
 }
 
 async function fetchBulkList(opts: {
-  classArmId: string
+  classId: string
   sessionId: string
   termId: string
 }): Promise<BulkStudent[]> {
   const r = await api.get<{
     students: BulkStudent[]
-    classArm: { id: string; fullName: string }
+    class: { id: string; name: string }
     session: { id: string; name: string }
     term: { id: string; name: string; order: number }
   }>('/api/report-card/bulk', { query: opts })
@@ -127,7 +126,6 @@ export function PrincipalReportCards() {
   const [sessionId, setSessionId] = useState<string>('')
   const [termId, setTermId] = useState<string>('')
   const [classId, setClassId] = useState<string>('all')
-  const [armId, setArmId] = useState<string>('all')
   const [studentId, setStudentId] = useState<string>('')
 
   // Sessions query (provides default session/term)
@@ -159,39 +157,33 @@ export function PrincipalReportCards() {
     enabled: !!sessionId,
   })
 
-  // Classes (with arms)
+  // Classes (flat list — students belong directly to a class)
   const classesQuery = useQuery({
     queryKey: ['classes-for-report-cards'],
     queryFn: fetchClasses,
   })
 
-  // Reset arm when class changes
   const classes = classesQuery.data ?? []
-  const selectedClass = classes.find((c) => c.id === classId) ?? null
-  const arms = selectedClass?.arms ?? []
+  const sortedClasses = [...classes].sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level
+    return a.name.localeCompare(b.name)
+  })
 
-  // When class changes, reset arm to "all" using render-time adjust
+  // Reset student when class changes (render-time adjust)
   const [lastClassId, setLastClassId] = useState<string>('all')
   if (classId !== lastClassId) {
     setLastClassId(classId)
-    if (armId !== 'all') setArmId('all')
+    if (studentId) setStudentId('')
   }
 
-  // Students for selected arm
+  // Students for selected class
   const studentsQuery = useQuery({
-    queryKey: ['report-cards', 'students', armId],
-    queryFn: () => fetchStudentsForArm(armId),
-    enabled: armId !== 'all',
+    queryKey: ['report-cards', 'students', classId],
+    queryFn: () => fetchStudentsForClass(classId),
+    enabled: classId !== 'all',
   })
 
   const students = studentsQuery.data ?? []
-
-  // Reset selected student when arm changes
-  const [lastArmId, setLastArmId] = useState<string>('all')
-  if (armId !== lastArmId) {
-    setLastArmId(armId)
-    if (studentId) setStudentId('')
-  }
 
   // Bulk mode
   const [bulkMode, setBulkMode] = useState(false)
@@ -226,18 +218,18 @@ export function PrincipalReportCards() {
   }
 
   const handleLoadBulk = async () => {
-    if (!sessionId || !termId || armId === 'all') {
-      toast.error('Pick a session, term, and class arm first')
+    if (!sessionId || !termId || classId === 'all') {
+      toast.error('Pick a session, term, and class first')
       return
     }
     try {
       const list = await fetchBulkList({
-        classArmId: armId,
+        classId,
         sessionId,
         termId,
       })
       if (list.length === 0) {
-        toast.info('No active students in this class arm')
+        toast.info('No active students in this class')
       } else {
         toast.success(`Loaded ${list.length} student(s) for bulk print`)
       }
@@ -264,8 +256,8 @@ export function PrincipalReportCards() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Report Cards</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Pick an academic session, term, class arm and student to preview a
-          printable report card — or print every student in a class arm in one
+          Pick an academic session, term, class and student to preview a
+          printable report card — or print every student in a class in one
           go.
         </p>
       </div>
@@ -324,7 +316,7 @@ export function PrincipalReportCards() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All classes</SelectItem>
-                  {classes.map((c) => (
+                  {sortedClasses.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name}
                     </SelectItem>
@@ -333,25 +325,12 @@ export function PrincipalReportCards() {
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="rc-arm">Class arm</Label>
-              <Select
-                value={armId}
-                onValueChange={setArmId}
-                disabled={!classId || classId === 'all'}
-              >
-                <SelectTrigger id="rc-arm" className="w-full">
-                  <SelectValue placeholder="All arms" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All arms</SelectItem>
-                  {arms.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.fullName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-1.5 self-end">
+              <span className="text-xs text-muted-foreground">
+                {classId !== 'all'
+                  ? `${students.length} active student(s)`
+                  : 'Pick a class to load students'}
+              </span>
             </div>
           </div>
 
@@ -361,10 +340,10 @@ export function PrincipalReportCards() {
               type="button"
               variant="outline"
               onClick={handleLoadBulk}
-              disabled={!sessionId || !termId || armId === 'all'}
+              disabled={!sessionId || !termId || classId === 'all'}
             >
               <Users className="mr-2 h-4 w-4" />
-              Load all students in arm (bulk print)
+              Load all students in class (bulk print)
             </Button>
             {bulkMode ? (
               <Button type="button" variant="ghost" onClick={handleExitBulk}>
@@ -386,9 +365,9 @@ export function PrincipalReportCards() {
             <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-transparent">
               {termsQuery.data?.terms.find((t) => t.id === termId)?.name ?? '—'}
             </Badge>
-            {armId !== 'all' ? (
+            {classId !== 'all' ? (
               <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-transparent">
-                {arms.find((a) => a.id === armId)?.fullName ?? '—'}
+                {classes.find((c) => c.id === classId)?.name ?? '—'}
               </Badge>
             ) : null}
           </CardContent>
@@ -417,11 +396,11 @@ export function PrincipalReportCards() {
       ) : (
         <>
           {/* ─── Student picker ─────────────────────────────────────────── */}
-          {armId !== 'all' ? (
+          {classId !== 'all' ? (
             <Card className="no-print">
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Students in this class arm</h2>
+                  <h2 className="text-sm font-semibold">Students in this class</h2>
                   <span className="text-xs text-muted-foreground">
                     {students.length} active
                   </span>
@@ -436,7 +415,7 @@ export function PrincipalReportCards() {
                   <Alert>
                     <Info className="h-4 w-4" />
                     <AlertDescription>
-                      No active students in this class arm yet.
+                      No active students in this class yet.
                     </AlertDescription>
                   </Alert>
                 ) : (
@@ -543,7 +522,7 @@ function BulkPreview({
         <Info className="h-4 w-4" />
         <AlertTitle>No students</AlertTitle>
         <AlertDescription>
-          No active students in this class arm.
+          No active students in this class.
         </AlertDescription>
       </Alert>
     )

@@ -28,8 +28,8 @@ import { useAppStore } from '@/store/app-store'
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type Assignment = {
-  classArmId: string
-  classArmName: string
+  classId: string
+  className: string
   subjectId: string
   subjectName: string
 }
@@ -43,7 +43,7 @@ type TeacherDashboard = {
     termId: string | null
   }
   assignments: Assignment[]
-  classArms: { id: string; fullName: string }[]
+  classes: { id: string; name: string }[]
   subjects: { id: string; name: string }[]
   results: {
     saved: number
@@ -72,7 +72,7 @@ const QUICK_LINKS: QuickLink[] = [
   {
     view: 'my-students',
     label: 'My Students',
-    description: 'Browse students in your arms',
+    description: 'Browse students in your classes',
     icon: GraduationCap,
   },
   {
@@ -261,7 +261,7 @@ export function TeacherDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Layers className="h-4 w-4 text-muted-foreground" />
-              My Class Arms
+              Assigned Classes
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -271,23 +271,23 @@ export function TeacherDashboard() {
                   <Skeleton key={i} className="h-8 w-full" />
                 ))}
               </div>
-            ) : data?.classArms.length ? (
+            ) : data?.classes.length ? (
               <ScrollArea className="max-h-64">
                 <div className="flex flex-wrap gap-2 pr-2">
-                  {data.classArms.map((c) => (
+                  {data.classes.map((c) => (
                     <Badge
                       key={c.id}
                       variant="secondary"
                       className="px-3 py-1 text-sm"
                     >
-                      {c.fullName}
+                      {c.name}
                     </Badge>
                   ))}
                 </div>
               </ScrollArea>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No class arms assigned.
+                No classes assigned.
               </p>
             )}
           </CardContent>
@@ -347,7 +347,7 @@ export function TeacherDashboard() {
               <ul className="divide-y pr-2">
                 {data.assignments.map((a, i) => (
                   <li
-                    key={`${a.classArmId}-${a.subjectId}`}
+                    key={`${a.classId}-${a.subjectId}`}
                     className="flex items-center justify-between gap-3 py-2.5"
                   >
                     <div className="flex items-center gap-3">
@@ -357,7 +357,7 @@ export function TeacherDashboard() {
                       <div>
                         <p className="text-sm font-medium">{a.subjectName}</p>
                         <p className="text-xs text-muted-foreground">
-                          Class arm: {a.classArmName}
+                          Class: {a.className}
                         </p>
                       </div>
                     </div>

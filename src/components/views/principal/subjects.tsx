@@ -101,7 +101,7 @@ export function PrincipalSubjects() {
             <Badge variant="secondary">{subjects.length}</Badge>
           </CardTitle>
           <CardDescription>
-            Subjects can be assigned to teachers per class-arm from the Teacher Assignments module.
+            Subjects can be assigned to teachers per class from the Teacher Assignments module.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

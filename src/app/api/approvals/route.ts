@@ -4,18 +4,18 @@ import { db } from '@/lib/db'
 import { getActiveSessionAndTerm } from '@/lib/session'
 import { computeCumulative } from '@/lib/results'
 
-/**
- * GET /api/approvals
- *   Principal only. Returns a list of results to review with the principal's
- *   filters (sessionId, termId, classArmId, subjectId, status). Defaults to
- *   status=SUBMITTED and the active session/term. Also returns a summary of
- *   counts (pending/approved/needsCorrection) for the filtered session+term
- *   so the principal can see at-a-glance how the term is progressing.
- *
- * Each row carries: student, subject, classArm (with class), term, session,
- * remark, entered-by teacher name, status, scores, grade, position,
- * cumulative + priorTotals array (for the principal to spot mistakes).
- */
+// RESCO eCard — Approvals list (FLAT structure, NO class arms).
+// GET /api/approvals
+//   Principal only. Returns a list of results to review with the principal's
+//   filters (sessionId, termId, classId, subjectId, status). Defaults to
+//   status=SUBMITTED and the active session/term. Also returns a summary of
+//   counts (pending/approved/needsCorrection) for the filtered session+term
+//   so the principal can see at-a-glance how the term is progressing.
+//
+// Each row carries: student, subject, class (id+name), term, session,
+// remark, entered-by teacher name, status, scores, grade, position,
+// cumulative + priorTotals array (for the principal to spot mistakes).
+
 export async function GET(req: NextRequest) {
   const u = await requirePrincipal()
   if (!u) {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const sessionId = url.searchParams.get('sessionId') || undefined
   const termId = url.searchParams.get('termId') || undefined
-  const classArmId = url.searchParams.get('classArmId') || undefined
+  const classId = url.searchParams.get('classId') || undefined
   const subjectId = url.searchParams.get('subjectId') || undefined
   const status = url.searchParams.get('status') || 'SUBMITTED'
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   const where: any = {}
   if (effSessionId) where.sessionId = effSessionId
   if (effTermId) where.termId = effTermId
-  if (classArmId) where.classArmId = classArmId
+  if (classId) where.classId = classId
   if (subjectId) where.subjectId = subjectId
   if (status && status !== 'ALL') where.status = status
 
@@ -53,11 +53,7 @@ export async function GET(req: NextRequest) {
           otherNames: true,
           gender: true,
           classId: true,
-          classArmId: true,
           class: { select: { id: true, name: true, level: true } },
-          classArm: {
-            select: { id: true, name: true, fullName: true, classId: true },
-          },
         },
       },
       subject: { select: { id: true, name: true, code: true } },
@@ -71,22 +67,10 @@ export async function GET(req: NextRequest) {
         },
       },
     },
-    orderBy: [{ classArmId: 'asc' }, { subjectId: 'asc' }, { total: 'desc' }],
+    orderBy: [{ classId: 'asc' }, { subjectId: 'asc' }, { total: 'desc' }],
   })
 
-  // Result.classArmId is a snapshot field (no relation defined on Result),
-  // so we resolve the class-arm display name by loading every distinct
-  // classArmId referenced in the rows, in one query, and join them here.
-  const classArmIds = Array.from(
-    new Set(rows.map((r) => r.classArmId).filter(Boolean)),
-  )
-  const classArms = await db.classArm.findMany({
-    where: { id: { in: classArmIds } },
-    include: { class: { select: { id: true, name: true, level: true } } },
-  })
-  const classArmMap = new Map(classArms.map((c) => [c.id, c]))
-
-  // For cumulative: gather prior-term totals per (studentId, subjectId).
+  // For cumulative: gather prior term totals per (studentId, subjectId).
   // We look up terms with order < current term order in the same session.
   const termOrder = rows[0]?.term?.order ?? null
   let priorTotalsMap: Record<string, number[]> = {}
@@ -139,7 +123,6 @@ export async function GET(req: NextRequest) {
     if (r.total != null && termOrder) {
       cumulative = computeCumulative(termOrder, r.total, priorTotals)
     }
-    const ca = r.classArmId ? classArmMap.get(r.classArmId) : undefined
     return {
       id: r.id,
       status: r.status,
@@ -155,12 +138,10 @@ export async function GET(req: NextRequest) {
       priorTotals,
       student: r.student,
       subject: r.subject,
-      classArm: {
-        id: ca?.id ?? r.classArmId,
-        name: ca?.name ?? '—',
-        fullName: ca?.fullName ?? '—',
-        classId: ca?.classId ?? '',
-        class: ca?.class ?? { id: '', name: '—', level: 0 },
+      class: {
+        id: r.student.class?.id ?? r.student.classId ?? '',
+        name: r.student.class?.name ?? '—',
+        classId: r.student.classId ?? '',
       },
       term: r.term,
       session: r.session,
@@ -179,7 +160,7 @@ export async function GET(req: NextRequest) {
   const summaryWhere: any = {}
   if (effSessionId) summaryWhere.sessionId = effSessionId
   if (effTermId) summaryWhere.termId = effTermId
-  if (classArmId) summaryWhere.classArmId = classArmId
+  if (classId) summaryWhere.classId = classId
   if (subjectId) summaryWhere.subjectId = subjectId
 
   const grouped = await db.result.groupBy({
@@ -201,7 +182,7 @@ export async function GET(req: NextRequest) {
     filters: {
       sessionId: effSessionId ?? null,
       termId: effTermId ?? null,
-      classArmId: classArmId ?? null,
+      classId: classId ?? null,
       subjectId: subjectId ?? null,
       status,
     },

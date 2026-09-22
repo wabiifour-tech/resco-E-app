@@ -119,7 +119,7 @@ function humanContext(raw: string | null): string {
     const parts: string[] = []
     if (parsed.studentName) parts.push(`Student: ${parsed.studentName}`)
     if (parsed.subjectName) parts.push(`Subject: ${parsed.subjectName}`)
-    if (parsed.classArmName) parts.push(`Class: ${parsed.classArmName}`)
+    if (parsed.className) parts.push(`Class: ${parsed.className}`)
     if (parsed.termName) parts.push(`Term: ${parsed.termName}`)
     if (parsed.sessionName) parts.push(`Session: ${parsed.sessionName}`)
     if (parsed.teacherName) parts.push(`Teacher: ${parsed.teacherName}`)

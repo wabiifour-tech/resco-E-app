@@ -39,8 +39,7 @@ import { ReportCardDocument } from '@/components/views/shared/report-card-docume
 
 type Assignment = {
   id: string
-  classArmId: string
-  classArmName: string
+  classId: string
   className: string
   subjectId: string
   subjectName: string
@@ -67,7 +66,6 @@ type StudentRow = {
   otherNames: string | null
   gender: string | null
   class: { id: string; name: string } | null
-  classArm: { id: string; name: string; fullName: string } | null
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -76,10 +74,10 @@ async function fetchBootstrap(): Promise<Bootstrap> {
   return api.get<Bootstrap>('/api/results/bootstrap')
 }
 
-async function fetchStudentsForArm(armId: string): Promise<StudentRow[]> {
+async function fetchStudentsForClass(classId: string): Promise<StudentRow[]> {
   const r = await api.get<{ students: StudentRow[]; count: number }>(
     '/api/results/students',
-    { query: { armId, active: 'true' } },
+    { query: { classId, active: 'true' } },
   )
   return r.students
 }
@@ -87,7 +85,7 @@ async function fetchStudentsForArm(armId: string): Promise<StudentRow[]> {
 // ─── Main view ─────────────────────────────────────────────────────────────────
 
 export function TeacherReportCards() {
-  const [classArmId, setClassArmId] = useState<string>('')
+  const [classId, setClassId] = useState<string>('')
   const [studentId, setStudentId] = useState<string>('')
 
   // Bootstrap — assignments + active session + active term
@@ -99,36 +97,34 @@ export function TeacherReportCards() {
   const activeSession = bootQuery.data?.activeSession ?? null
   const activeTerm = bootQuery.data?.activeTerm ?? null
 
-  // The teacher can only generate cards for students in their assigned arms —
-  // build a unique list of (classArmId, classArmName, className) from
-  // their assignments.
-  const arms = (() => {
-    const map = new Map<string, { id: string; name: string; className: string }>()
+  // The teacher can only generate cards for students in their assigned classes —
+  // build a unique list of (classId, className) from their assignments.
+  const classes = (() => {
+    const map = new Map<string, { id: string; name: string }>()
     for (const a of bootQuery.data?.assignments ?? []) {
-      if (!map.has(a.classArmId)) {
-        map.set(a.classArmId, {
-          id: a.classArmId,
-          name: a.classArmName,
-          className: a.className,
+      if (!map.has(a.classId)) {
+        map.set(a.classId, {
+          id: a.classId,
+          name: a.className,
         })
       }
     }
-    return Array.from(map.values())
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
   })()
 
-  // Reset student when arm changes
-  const [lastArmId, setLastArmId] = useState<string>('')
-  if (classArmId !== lastArmId) {
-    setLastArmId(classArmId)
+  // Reset student when class changes
+  const [lastClassId, setLastClassId] = useState<string>('')
+  if (classId !== lastClassId) {
+    setLastClassId(classId)
     if (studentId) setStudentId('')
   }
 
-  // Students for the selected arm (uses the teacher-friendly endpoint that
-  // checks the teacher has ANY assignment in this arm).
+  // Students for the selected class (uses the teacher-friendly endpoint that
+  // checks the teacher has ANY assignment in this class).
   const studentsQuery = useQuery({
-    queryKey: ['report-cards', 'students', classArmId],
-    queryFn: () => fetchStudentsForArm(classArmId),
-    enabled: !!classArmId,
+    queryKey: ['report-cards', 'students', classId],
+    queryFn: () => fetchStudentsForClass(classId),
+    enabled: !!classId,
   })
 
   const students = studentsQuery.data ?? []
@@ -183,7 +179,7 @@ export function TeacherReportCards() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Report Cards</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Generate printable report cards for students in your assigned class arms.
+            Generate printable report cards for students in your assigned classes.
           </p>
         </div>
         <Alert>
@@ -198,20 +194,20 @@ export function TeacherReportCards() {
     )
   }
 
-  if (arms.length === 0) {
+  if (classes.length === 0) {
     return (
       <div className="space-y-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Report Cards</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Generate printable report cards for students in your assigned class arms.
+            Generate printable report cards for students in your assigned classes.
           </p>
         </div>
         <Alert>
           <Info className="h-4 w-4" />
           <AlertTitle>No assignments yet</AlertTitle>
           <AlertDescription>
-            You have not been assigned to any class arm. Ask the principal to assign
+            You have not been assigned to any class. Ask the principal to assign
             you before you can generate report cards.
           </AlertDescription>
         </Alert>
@@ -224,7 +220,7 @@ export function TeacherReportCards() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Report Cards</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Generate printable report cards for students in your assigned class arms.
+          Generate printable report cards for students in your assigned classes.
         </p>
       </div>
 
@@ -249,19 +245,19 @@ export function TeacherReportCards() {
         <CardContent className="p-4 space-y-4">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Filter className="h-4 w-4" />
-            Pick a class arm and student
+            Pick a class and student
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="rc-arm">Class arm</Label>
-              <Select value={classArmId} onValueChange={setClassArmId}>
-                <SelectTrigger id="rc-arm" className="w-full">
-                  <SelectValue placeholder="Select class arm" />
+              <Label htmlFor="rc-class">Class</Label>
+              <Select value={classId} onValueChange={setClassId}>
+                <SelectTrigger id="rc-class" className="w-full">
+                  <SelectValue placeholder="Select class" />
                 </SelectTrigger>
                 <SelectContent>
-                  {arms.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name} ({a.className})
+                  {classes.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -269,10 +265,10 @@ export function TeacherReportCards() {
             </div>
           </div>
 
-          {classArmId ? (
+          {classId ? (
             <div className="space-y-3 pt-1">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Students in this class arm</h2>
+                <h2 className="text-sm font-semibold">Students in this class</h2>
                 <span className="text-xs text-muted-foreground">
                   {students.length} active
                 </span>
@@ -287,7 +283,7 @@ export function TeacherReportCards() {
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    No active students in this class arm yet.
+                    No active students in this class yet.
                   </AlertDescription>
                 </Alert>
               ) : (

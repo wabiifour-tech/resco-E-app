@@ -16,6 +16,9 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+// RESCO eCard — Result detail API (FLAT structure, NO class arms).
+// All references use `classId`. Result has a `class` relation (id + name).
+
 // ─── Shared serializer (mirror of /api/results/route.ts) ──────────────────────
 
 type PriorTotals = { firstTerm: number | null; secondTerm: number | null }
@@ -77,20 +80,19 @@ async function serialize(row: any) {
     termOrder,
   })
   const cumulative = computeCumulativeFor(termOrder, row.total, priors)
-  // Result has no classArm relation — fetch separately.
-  const classArm = row.classArmId
-    ? await db.classArm.findUnique({
-        where: { id: row.classArmId },
-        select: { id: true, fullName: true },
-      })
-    : null
+  // Result has a `class` relation — read directly from the row.
+  const cls = row.class
+    ? { id: row.class.id, name: row.class.name }
+    : row.classId
+      ? { id: row.classId, name: row.classId }
+      : { id: '', name: '—' }
   return {
     id: row.id,
     studentId: row.studentId,
     subjectId: row.subjectId,
     sessionId: row.sessionId,
     termId: row.termId,
-    classArmId: row.classArmId,
+    classId: row.classId,
     ca: row.ca,
     exam: row.exam,
     total: row.total,
@@ -119,9 +121,7 @@ async function serialize(row: any) {
     subject: { id: row.subject.id, name: row.subject.name, code: row.subject.code ?? null },
     session: { id: row.session.id, name: row.session.name },
     term: { id: row.term.id, name: row.term.name, order: row.term.order, sessionId: row.term.sessionId },
-    classArm: classArm
-      ? { id: classArm.id, fullName: classArm.fullName }
-      : { id: row.classArmId, fullName: row.classArmId },
+    class: cls,
     priorTotals: priors,
     cumulative,
   }
@@ -140,6 +140,7 @@ const includeClause = {
   subject: { select: { id: true, name: true, code: true } },
   session: { select: { id: true, name: true } },
   term: { select: { id: true, name: true, order: true, sessionId: true } },
+  class: { select: { id: true, name: true } },
   remark: { select: { id: true, category: true, text: true } },
   enteredBy: { select: { id: true, user: { select: { name: true } } } },
 }
@@ -162,7 +163,7 @@ export async function GET(
 
   // Authorization
   if (u.role === 'TEACHER') {
-    const authU = await requireTeacherAuthorized(row.classArmId, row.subjectId)
+    const authU = await requireTeacherAuthorized(row.classId, row.subjectId)
     if (!authU) return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -195,10 +196,10 @@ export async function PUT(
   if (!existing) return Response.json({ error: 'Result not found' }, { status: 404 })
 
   // Authorization
-  const authU = await requireTeacherAuthorized(existing.classArmId, existing.subjectId)
+  const authU = await requireTeacherAuthorized(existing.classId, existing.subjectId)
   if (!authU) {
     return Response.json(
-      { error: 'You are not assigned to this class arm and subject' },
+      { error: 'You are not assigned to this class and subject' },
       { status: 403 },
     )
   }
@@ -251,7 +252,7 @@ export async function PUT(
 
   await recomputePositions({
     subjectId: existing.subjectId,
-    classArmId: existing.classArmId,
+    classId: existing.classId,
     sessionId: existing.sessionId,
     termId: existing.termId,
   })
@@ -264,7 +265,7 @@ export async function PUT(
     subjectName: existing.subject.name,
     sessionId: existing.sessionId,
     termId: existing.termId,
-    classArmId: existing.classArmId,
+    classId: existing.classId,
     ca,
     exam,
     total,
@@ -313,10 +314,10 @@ export async function PATCH(
   })
   if (!existing) return Response.json({ error: 'Result not found' }, { status: 404 })
 
-  const authU = await requireTeacherAuthorized(existing.classArmId, existing.subjectId)
+  const authU = await requireTeacherAuthorized(existing.classId, existing.subjectId)
   if (!authU) {
     return Response.json(
-      { error: 'You are not assigned to this class arm and subject' },
+      { error: 'You are not assigned to this class and subject' },
       { status: 403 },
     )
   }
@@ -376,7 +377,7 @@ export async function PATCH(
   if (ca !== undefined || exam !== undefined) {
     await recomputePositions({
       subjectId: existing.subjectId,
-      classArmId: existing.classArmId,
+      classId: existing.classId,
       sessionId: existing.sessionId,
       termId: existing.termId,
     })
@@ -390,7 +391,7 @@ export async function PATCH(
     subjectName: existing.subject.name,
     sessionId: existing.sessionId,
     termId: existing.termId,
-    classArmId: existing.classArmId,
+    classId: existing.classId,
     patched: Object.keys(data),
   }
   await logAudit({

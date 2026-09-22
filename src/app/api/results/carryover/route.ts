@@ -4,13 +4,13 @@ import { getSession, requireTeacherAuthorized } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
-/**
- * GET /api/results/carryover?studentId=&subjectId=&sessionId=
- * Returns the prior term totals for a single student+subject+session
- * so the entry grid can show carry-over + cumulative live.
- *
- * Returns: { firstTerm, secondTerm, firstTermExists, secondTermExists }
- */
+// RESCO eCard — Carry-over endpoint (FLAT structure, NO class arms).
+// GET /api/results/carryover?studentId=&subjectId=&sessionId=
+// Returns the prior term totals for a single student+subject+session
+// so the entry grid can show carry-over + cumulative live.
+//
+// Returns: { firstTerm, secondTerm, firstTermExists, secondTermExists }
+
 export async function GET(req: NextRequest) {
   const u = await getSession()
   if (!u) return Response.json({ error: 'Authentication required' }, { status: 401 })
@@ -27,28 +27,26 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // Authorization: check the teacher is assigned to ANY arm of this student.
-  // If the student is in an arm+subject that the teacher isn't assigned to,
-  // they can't see carry-over for it.
+  // Authorization: check the teacher is assigned to (student's class, subject).
   const student = await db.student.findUnique({
     where: { id: studentId },
-    select: { id: true, classArmId: true },
+    select: { id: true, classId: true },
   })
   if (!student) return Response.json({ error: 'Student not found' }, { status: 404 })
 
   if (u.role === 'TEACHER') {
-    // Teacher must be authorized for (student's classArm, subjectId)
-    const classArmId = student.classArmId ?? ''
-    if (!classArmId) {
+    // Teacher must be authorized for (student's class, subjectId)
+    const classId = student.classId ?? ''
+    if (!classId) {
       return Response.json(
-        { error: 'Student has no class arm assigned' },
+        { error: 'Student has no class assigned' },
         { status: 400 },
       )
     }
-    const ok = await requireTeacherAuthorized(classArmId, subjectId)
+    const ok = await requireTeacherAuthorized(classId, subjectId)
     if (!ok) {
       return Response.json(
-        { error: 'You are not assigned to this student class arm and subject' },
+        { error: 'You are not assigned to this student\'s class and subject' },
         { status: 403 },
       )
     }

@@ -51,7 +51,7 @@ type ClassRow = {
   id: string
   name: string
   level: number
-  arms: { id: string; name: string; fullName: string }[]
+  category?: string | null
 }
 
 type SubjectRow = {
@@ -66,7 +66,7 @@ type ResultRow = {
   subjectId: string
   sessionId: string
   termId: string
-  classArmId: string
+  classId: string
   ca: number | null
   exam: number | null
   total: number | null
@@ -91,7 +91,7 @@ type ResultRow = {
   subject: { id: string; name: string; code: string | null }
   session: { id: string; name: string }
   term: { id: string; name: string; order: number; sessionId: string }
-  classArm: { id: string; fullName: string }
+  class: { id: string; name: string }
   priorTotals: { firstTerm: number | null; secondTerm: number | null }
   cumulative: number | null
 }
@@ -119,7 +119,7 @@ async function fetchSubjects(): Promise<SubjectRow[]> {
 async function fetchResults(params: {
   sessionId: string
   termId?: string
-  classArmId?: string
+  classId?: string
   subjectId?: string
   status?: string
 }): Promise<ResultRow[]> {
@@ -171,7 +171,7 @@ export function PrincipalResults() {
   // Filter state
   const [sessionId, setSessionId] = useState<string>('')
   const [termId, setTermId] = useState<string>('')
-  const [classArmId, setClassArmId] = useState<string>('all')
+  const [classId, setClassId] = useState<string>('all')
   const [subjectId, setSubjectId] = useState<string>('all')
   const [status, setStatus] = useState<string>('all')
 
@@ -206,7 +206,7 @@ export function PrincipalResults() {
     enabled: !!sessionId,
   })
 
-  // Classes (with arms) + subjects — for the filter dropdowns
+  // Classes + subjects — for the filter dropdowns
   const classesQuery = useQuery({
     queryKey: ['classes-for-results'],
     queryFn: fetchClasses,
@@ -224,7 +224,7 @@ export function PrincipalResults() {
       'results',
       sessionId,
       termId,
-      classArmId,
+      classId,
       subjectId,
       status,
     ],
@@ -232,7 +232,7 @@ export function PrincipalResults() {
       fetchResults({
         sessionId,
         termId: termId || undefined,
-        classArmId: classArmId === 'all' ? undefined : classArmId,
+        classId: classId === 'all' ? undefined : classId,
         subjectId: subjectId === 'all' ? undefined : subjectId,
         status: status === 'all' ? undefined : status,
       }),
@@ -245,10 +245,11 @@ export function PrincipalResults() {
   const subjects = subjectsQuery.data ?? []
   const results = resultsQuery.data ?? []
 
-  const allArms = useMemo(() => {
-    return classes.flatMap((c) =>
-      c.arms.map((a) => ({ ...a, className: c.name })),
-    )
+  const sortedClasses = useMemo(() => {
+    return [...classes].sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level
+      return a.name.localeCompare(b.name)
+    })
   }, [classes])
 
   const selectedSession = sessions.find((s) => s.id === sessionId)
@@ -262,7 +263,7 @@ export function PrincipalResults() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Results</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Browse every result row in the school. Filter by session, term, class arm, subject, and status.
+          Browse every result row in the school. Filter by session, term, class, subject, and status.
         </p>
       </div>
 
@@ -319,16 +320,16 @@ export function PrincipalResults() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">Class Arm</label>
-              <Select value={classArmId} onValueChange={setClassArmId}>
-                <SelectTrigger className="w-full h-11" aria-label="Filter by class arm">
-                  <SelectValue placeholder="All arms" />
+              <label className="text-xs font-medium">Class</label>
+              <Select value={classId} onValueChange={setClassId}>
+                <SelectTrigger className="w-full h-11" aria-label="Filter by class">
+                  <SelectValue placeholder="All classes" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All arms</SelectItem>
-                  {allArms.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.fullName}
+                  <SelectItem value="all">All classes</SelectItem>
+                  {sortedClasses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -377,9 +378,9 @@ export function PrincipalResults() {
             <span className="font-semibold">
               {selectedSession.name} — {selectedTerm.name}
             </span>
-            {classArmId !== 'all' && (
+            {classId !== 'all' && (
               <Badge variant="outline">
-                {allArms.find((a) => a.id === classArmId)?.fullName ?? classArmId}
+                {classes.find((c) => c.id === classId)?.name ?? classId}
               </Badge>
             )}
             {subjectId !== 'all' && (
@@ -403,7 +404,7 @@ export function PrincipalResults() {
           <Info className="h-4 w-4" />
           <AlertTitle>Select a session and term</AlertTitle>
           <AlertDescription>
-            Pick a session and term above to browse results. You can also narrow by class arm, subject, and status.
+            Pick a session and term above to browse results. You can also narrow by class, subject, and status.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -420,7 +421,7 @@ export function PrincipalResults() {
               ) : (
                 <>
                   {results.length} result{results.length === 1 ? '' : 's'}
-                  {(classArmId !== 'all' || subjectId !== 'all' || status !== 'all')
+                  {(classId !== 'all' || subjectId !== 'all' || status !== 'all')
                     ? ' matched'
                     : ' total'}
                 </>
@@ -447,7 +448,7 @@ export function PrincipalResults() {
                     <TableHead className="min-w-[140px]">Adm. No.</TableHead>
                     <TableHead className="min-w-[180px]">Student</TableHead>
                     <TableHead className="min-w-[150px]">Subject</TableHead>
-                    <TableHead className="min-w-[100px]">Class Arm</TableHead>
+                    <TableHead className="min-w-[100px]">Class</TableHead>
                     <TableHead className="min-w-[60px]">CA</TableHead>
                     <TableHead className="min-w-[60px]">Exam</TableHead>
                     <TableHead className="min-w-[60px]">Total</TableHead>
@@ -483,7 +484,7 @@ export function PrincipalResults() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{r.classArm.fullName}</Badge>
+                        <Badge variant="outline">{r.class.name}</Badge>
                       </TableCell>
                       <TableCell className="tabular-nums">{r.ca ?? '—'}</TableCell>
                       <TableCell className="tabular-nums">{r.exam ?? '—'}</TableCell>

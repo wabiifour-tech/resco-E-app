@@ -33,38 +33,66 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Layers, Plus, Pencil, Trash2, X, Users } from 'lucide-react'
+import { Layers, Plus, Pencil, Trash2, Users } from 'lucide-react'
 
-type ClassArm = {
-  id: string
-  name: string
-  fullName: string
-  classId: string
-}
-type ClassWithArms = {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ClassRow = {
   id: string
   name: string
   level: number
-  arms: ClassArm[]
-  _count: { students: number }
+  category: string | null
+  studentCount: number
+}
+
+type ClassInput = {
+  name: string
+  level: number
+  category: string
+}
+
+const CATEGORY_ORDER = [
+  'Early Years',
+  'Nursery',
+  'Primary',
+  'Junior Secondary',
+  'Senior Secondary',
+] as const
+
+const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  'Early Years': 'Pre-Nursery stage (e.g. KG)',
+  Nursery: 'Nursery 1 and Nursery 2',
+  Primary: 'Primary 1 through Primary 6',
+  'Junior Secondary': 'JSS 1 through JSS 3',
+  'Senior Secondary': 'SS 1 through SS 3',
+}
+
+function categoryOf(c: ClassRow): string {
+  return c.category ?? 'Other'
 }
 
 export function PrincipalClasses() {
   const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
-  const [managedClass, setManagedClass] = useState<ClassWithArms | null>(null)
+  const [editing, setEditing] = useState<ClassRow | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['principal', 'classes'],
-    queryFn: () => api.get<{ classes: ClassWithArms[] }>('/api/classes'),
+    queryFn: () => api.get<{ classes: ClassRow[] }>('/api/classes'),
   })
   const classes = data?.classes ?? []
 
   const createMutation = useMutation({
-    mutationFn: (body: { name: string; level: number }) =>
-      api.post('/api/classes', body),
+    mutationFn: (body: ClassInput) => api.post('/api/classes', body),
     onSuccess: () => {
       toast.success('Class created')
       qc.invalidateQueries({ queryKey: ['principal', 'classes'] })
@@ -82,13 +110,37 @@ export function PrincipalClasses() {
     onError: (e: any) => toast.error(e?.message ?? 'Failed to delete class'),
   })
 
+  // Group classes by category (preserving the canonical category order).
+  const grouped = (() => {
+    const map = new Map<string, ClassRow[]>()
+    for (const c of classes) {
+      const cat = categoryOf(c)
+      const list = map.get(cat) ?? []
+      list.push(c)
+      map.set(cat, list)
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
+    }
+    const orderedCats = Array.from(map.keys()).sort((a, b) => {
+      const ia = CATEGORY_ORDER.indexOf(a as (typeof CATEGORY_ORDER)[number])
+      const ib = CATEGORY_ORDER.indexOf(b as (typeof CATEGORY_ORDER)[number])
+      if (ia !== -1 && ib !== -1) return ia - ib
+      if (ia !== -1) return -1
+      if (ib !== -1) return 1
+      return a.localeCompare(b)
+    })
+    return orderedCats.map((cat) => ({ category: cat, items: map.get(cat)! }))
+  })()
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Classes &amp; Arms</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Classes</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage school classes (JSS1, SS1, etc.) and their arms (A, B).
+            Manage the school&apos;s flat class list — KG, Nursery, Primary, JSS, SS.
+            Students and teachers are assigned directly to a class.
           </p>
         </div>
         <CreateClassDialog
@@ -106,7 +158,7 @@ export function PrincipalClasses() {
             <Badge variant="secondary">{classes.length}</Badge>
           </CardTitle>
           <CardDescription>
-            Each class has multiple arms. Arms are uniquely identified by their full name (e.g. JSS1A).
+            Classes are grouped by category. Each class holds one student roll.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -121,88 +173,91 @@ export function PrincipalClasses() {
               No classes yet. Create the first class to begin.
             </div>
           ) : (
-            <div className="space-y-3">
-              {classes.map((cls) => (
-                <div
-                  key={cls.id}
-                  className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border p-3"
-                >
-                  <div className="space-y-2 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-base">{cls.name}</span>
-                      <Badge variant="outline" className="text-[10px]">
-                        Level {cls.level}
-                      </Badge>
-                      <Badge variant="secondary" className="text-[10px] gap-1">
-                        <Users className="h-3 w-3" /> {cls._count.students} students
-                      </Badge>
-                    </div>
-                    {cls.arms.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        No arms — add at least one arm to assign teachers and students.
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {cls.arms.map((arm) => (
-                          <Badge key={arm.id} variant="outline" className="font-mono">
-                            {arm.fullName}
+            <div className="space-y-6">
+              {grouped.map(({ category, items }) => (
+                <section key={category} className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold">{category}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {CATEGORY_DESCRIPTIONS[category] ?? ''}
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {items.map((cls) => (
+                      <div
+                        key={cls.id}
+                        className="flex flex-col gap-2 rounded-lg border p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-base">
+                            {cls.name}
+                          </span>
+                          <Badge variant="outline" className="text-[10px]">
+                            Level {cls.level}
                           </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setManagedClass(cls)}
-                    >
-                      <Pencil className="h-3.5 w-3.5" /> Manage
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete {cls.name}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This removes the class and all of its arms ({cls.arms.length}).
-                            Teacher assignments linked to those arms will also be removed.
-                            This action cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => deleteMutation.mutate(cls.id)}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-[10px] gap-1">
+                            <Users className="h-3 w-3" /> {cls.studentCount} students
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditing(cls)}
                           >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete {cls.name}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This permanently removes the class. Students,
+                                  teacher assignments, and results linked to it
+                                  may also be affected. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(cls.id)}
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                </section>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      <ManageArmsDialog
-        cls={managedClass}
-        onOpenChange={(open) => !open && setManagedClass(null)}
+      <EditClassDialog
+        cls={editing}
+        onOpenChange={(open) => !open && setEditing(null)}
       />
     </div>
   )
 }
+
+// ─── Create dialog ────────────────────────────────────────────────────────────
 
 function CreateClassDialog({
   open,
@@ -212,20 +267,25 @@ function CreateClassDialog({
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
-  onSubmit: (v: { name: string; level: number }) => void
+  onSubmit: (v: ClassInput) => void
   pending: boolean
 }) {
   const [name, setName] = useState('')
   const [level, setLevel] = useState('0')
+  const [category, setCategory] = useState<string>('Primary')
 
   function submit() {
-    const trimmed = name.trim().toUpperCase()
+    const trimmed = name.trim()
     if (!trimmed) {
       toast.error('Class name is required')
       return
     }
     const lvl = Number(level)
-    onSubmit({ name: trimmed, level: Number.isFinite(lvl) ? lvl : 0 })
+    onSubmit({
+      name: trimmed,
+      level: Number.isFinite(lvl) ? lvl : 0,
+      category,
+    })
   }
 
   return (
@@ -235,6 +295,7 @@ function CreateClassDialog({
         if (!v) {
           setName('')
           setLevel('0')
+          setCategory('Primary')
         }
         onOpenChange(v)
       }}
@@ -248,7 +309,8 @@ function CreateClassDialog({
         <DialogHeader>
           <DialogTitle>Create a new class</DialogTitle>
           <DialogDescription>
-            e.g. JSS1, JSS2, SS1, SS3. You can add arms (A, B, C) afterwards.
+            e.g. KG, Nursery 1, Primary 3, JSS 1, SS 2. Students belong directly
+            to this class.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -258,7 +320,7 @@ function CreateClassDialog({
               id="cls-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="JSS1"
+              placeholder="JSS 1"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submit()
               }}
@@ -276,7 +338,25 @@ function CreateClassDialog({
               placeholder="0"
             />
             <p className="text-xs text-muted-foreground">
-              Lower level = earlier in lists. Use 1 for JSS1, 4 for SS1, etc.
+              Lower level = earlier in lists. Use 1 for KG, 2 for Nursery 1, etc.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cls-category">Category</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger id="cls-category" className="w-full">
+                <SelectValue placeholder="Pick a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORY_ORDER.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {CATEGORY_DESCRIPTIONS[category] ?? ''}
             </p>
           </div>
         </div>
@@ -293,185 +373,100 @@ function CreateClassDialog({
   )
 }
 
-function ManageArmsDialog({
+// ─── Edit dialog ──────────────────────────────────────────────────────────────
+
+function EditClassDialog({
   cls,
   onOpenChange,
 }: {
-  cls: ClassWithArms | null
+  cls: ClassRow | null
   onOpenChange: (v: boolean) => void
 }) {
-  // When closed, render nothing — this guarantees a fresh state when cls changes.
   if (!cls) return null
-  return <ManageArmsDialogInner key={cls.id} cls={cls} onOpenChange={onOpenChange} />
+  return <EditClassDialogInner key={cls.id} cls={cls} onOpenChange={onOpenChange} />
 }
 
-function ManageArmsDialogInner({
+function EditClassDialogInner({
   cls,
   onOpenChange,
 }: {
-  cls: ClassWithArms
+  cls: ClassRow
   onOpenChange: (v: boolean) => void
 }) {
   const qc = useQueryClient()
-  const [armName, setArmName] = useState('')
-  const [editName, setEditName] = useState(cls.name)
-  const [editLevel, setEditLevel] = useState(String(cls.level))
+  const [name, setName] = useState(cls.name)
+  const [level, setLevel] = useState(String(cls.level))
+  const [category, setCategory] = useState<string>(cls.category ?? 'Primary')
 
-  const addArm = useMutation({
-    mutationFn: (name: string) =>
-      api.post(`/api/classes/${cls.id}/arms`, { name }),
-    onSuccess: () => {
-      toast.success('Arm added')
-      qc.invalidateQueries({ queryKey: ['principal', 'classes'] })
-      setArmName('')
-    },
-    onError: (e: any) => toast.error(e?.message ?? 'Failed to add arm'),
-  })
-
-  const removeArm = useMutation({
-    mutationFn: (armId: string) =>
-      api.delete(`/api/classes/${cls.id}/arms/${armId}`),
-    onSuccess: () => {
-      toast.success('Arm removed')
-      qc.invalidateQueries({ queryKey: ['principal', 'classes'] })
-    },
-    onError: (e: any) => toast.error(e?.message ?? 'Failed to remove arm'),
-  })
-
-  const saveClass = useMutation({
+  const saveMutation = useMutation({
     mutationFn: () =>
       api.put(`/api/classes/${cls.id}`, {
-        name: editName.trim().toUpperCase(),
-        level: Number(editLevel) || 0,
+        name: name.trim(),
+        level: Number(level) || 0,
+        category,
       }),
     onSuccess: () => {
       toast.success('Class updated')
       qc.invalidateQueries({ queryKey: ['principal', 'classes'] })
+      onOpenChange(false)
     },
     onError: (e: any) => toast.error(e?.message ?? 'Failed to update class'),
   })
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Manage {cls.name}</DialogTitle>
+          <DialogTitle>Edit {cls.name}</DialogTitle>
           <DialogDescription>
-            Edit class details and manage arms. Arm full names are auto-generated as
-            <span className="font-mono"> {'{Class}{Arm}'}</span> (e.g. JSS1A).
+            Update the class name, level, or category.
           </DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-5">
-            {/* Edit class */}
-            <div className="space-y-3 rounded-md border p-3 bg-muted/30">
-              <p className="text-xs font-medium text-muted-foreground">Class details</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-name">Name</Label>
-                  <Input
-                    id="edit-name"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="edit-level">Level</Label>
-                  <Input
-                    id="edit-level"
-                    type="number"
-                    min={0}
-                    max={20}
-                    value={editLevel}
-                    onChange={(e) => setEditLevel(e.target.value)}
-                  />
-                </div>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => saveClass.mutate()}
-                disabled={saveClass.isPending || !editName.trim()}
-              >
-                {saveClass.isPending ? 'Saving…' : 'Save changes'}
-              </Button>
-            </div>
-
-            {/* Arms list */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Arms ({cls.arms.length})
-                </p>
-              </div>
-              {cls.arms.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No arms yet.</p>
-              ) : (
-                <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {cls.arms.map((arm) => (
-                    <li
-                      key={arm.id}
-                      className="flex items-center justify-between rounded-md border px-3 py-2"
-                    >
-                      <span className="font-mono font-medium">{arm.fullName}</span>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Remove {arm.fullName}?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Any teacher assignments for this arm will be removed.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => removeArm.mutate(arm.id)}
-                            >
-                              Remove
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="flex gap-2">
-                <Input
-                  value={armName}
-                  onChange={(e) => setArmName(e.target.value)}
-                  placeholder="A"
-                  className="w-24"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && armName.trim()) {
-                      addArm.mutate(armName.trim())
-                    }
-                  }}
-                />
-                <Button
-                  onClick={() => {
-                    if (armName.trim()) addArm.mutate(armName.trim().toUpperCase())
-                  }}
-                  disabled={addArm.isPending || !armName.trim()}
-                  className="flex-1"
-                >
-                  <Plus className="h-4 w-4" /> Add Arm
-                </Button>
-              </div>
-            </div>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-name">Class name</Label>
+            <Input
+              id="edit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-level">Level</Label>
+            <Input
+              id="edit-level"
+              type="number"
+              min={0}
+              max={20}
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-category">Category</Label>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger id="edit-category" className="w-full">
+                <SelectValue placeholder="Pick a category" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORY_ORDER.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Done
+            Cancel
+          </Button>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !name.trim()}
+          >
+            {saveMutation.isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </DialogFooter>
       </DialogContent>

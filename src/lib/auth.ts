@@ -116,11 +116,13 @@ export function forbidden(message = 'Forbidden'): Response {
 }
 
 /**
- * Ensure a teacher is authorized for a classArm + subject.
+ * Ensure a teacher is authorized for a Class + subject.
  * Principal is always authorized. Returns the user or null.
+ * (The school structure is FLAT — no class arms. A teacher is assigned
+ * directly to a Class + Subject.)
  */
 export async function requireTeacherAuthorized(
-  classArmId: string,
+  classId: string,
   subjectId: string,
 ): Promise<SessionUser | null> {
   const u = await getSession()
@@ -128,7 +130,7 @@ export async function requireTeacherAuthorized(
   if (u.role === 'PRINCIPAL') return u
   if (u.role !== 'TEACHER' || !u.teacherId) return null
   const assignment = await db.teacherAssignment.findFirst({
-    where: { teacherId: u.teacherId, classArmId, subjectId },
+    where: { teacherId: u.teacherId, classId, subjectId },
   })
   if (!assignment) return null
   return u

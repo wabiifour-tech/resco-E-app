@@ -6,6 +6,14 @@ import { computeCumulative, ordinal } from '@/lib/results'
 
 export const dynamic = 'force-dynamic'
 
+// RESCO eCard — Report Card (FLAT structure, NO class arms).
+// GET /api/report-card?studentId=&sessionId=&termId=
+//
+// Returns the full hydrated report card payload for a single student in a
+// specific session+term. The student's class comes from `student.class.name`
+// (NO classArmName). Teacher auth: must have ANY assignment in the student's
+// classId. Position is per CLASS (not class arm). Class average is per CLASS.
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TermResult = {
@@ -52,7 +60,6 @@ type ReportCardResponse = {
     admissionNumber: string
     fullName: string
     className: string
-    classArmName: string
     gender: string | null
   }
   subjects: SubjectRow[]
@@ -66,7 +73,7 @@ type ReportCardResponse = {
 
 /**
  * Auth check: principal sees any student. Teacher must have ANY assignment
- * for the student's class arm.
+ * for the student's class.
  */
 async function authorize(
   u: { id: string; role: string; teacherId: string | null },
@@ -76,7 +83,6 @@ async function authorize(
     where: { id: studentId },
     include: {
       class: { select: { id: true, name: true } },
-      classArm: { select: { id: true, fullName: true, name: true } },
     },
   })
   if (!student) return { ok: false, status: 404, error: 'Student not found' }
@@ -84,16 +90,16 @@ async function authorize(
   if (u.role !== 'TEACHER' || !u.teacherId) {
     return { ok: false, status: 403, error: 'Forbidden' }
   }
-  const studentClassArmId = student.classArmId
-  if (!studentClassArmId) {
-    return { ok: false, status: 400, error: 'Student has no class arm assigned' }
+  const studentClassId = student.classId
+  if (!studentClassId) {
+    return { ok: false, status: 400, error: 'Student has no class assigned' }
   }
   const assignment = await db.teacherAssignment.findFirst({
-    where: { teacherId: u.teacherId, classArmId: studentClassArmId },
+    where: { teacherId: u.teacherId, classId: studentClassId },
     select: { id: true },
   })
   if (!assignment) {
-    return { ok: false, status: 403, error: 'You are not assigned to this student\'s class arm' }
+    return { ok: false, status: 403, error: 'You are not assigned to this student\'s class' }
   }
   return { ok: true, student }
 }
@@ -229,14 +235,15 @@ export async function GET(req: NextRequest) {
   })
   for (const r of allResultsForStudentInSession) subjectIdsSet.add(r.subjectId)
 
-  // Also include any subjects that the student's class arm has a teacher assignment for,
-  // so that subjects with no entered scores yet still appear (showing dashes).
-  if (student.classArmId) {
-    const armAssignments = await db.teacherAssignment.findMany({
-      where: { classArmId: student.classArmId },
+  // Also include any subjects that the student's class has a teacher assignment
+  // for, so that subjects with no entered scores yet still appear (showing
+  // dashes).
+  if (student.classId) {
+    const classAssignments = await db.teacherAssignment.findMany({
+      where: { classId: student.classId },
       select: { subjectId: true },
     })
-    for (const a of armAssignments) subjectIdsSet.add(a.subjectId)
+    for (const a of classAssignments) subjectIdsSet.add(a.subjectId)
   }
 
   // Fetch subject names + sort alphabetically
@@ -261,7 +268,7 @@ export async function GET(req: NextRequest) {
 
   // For each subject: fetch each term's result, build the row.
   const subjects: SubjectRow[] = []
-  const classArmIdForPositions = student.classArmId ?? ''
+  const classIdForPositions = student.classId ?? ''
   let totalsSumForAverage = 0
   let totalsCountForAverage = 0
 
@@ -313,17 +320,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Position: prefer the current-term's stored position, but if the row's
-    // classArmId differs from the student's current class arm (e.g. student
-    // was reassigned mid-year), fall back to the snapshot's stored position.
+    // Position: prefer the current-term's stored position. The position is
+    // computed per CLASS (via recomputePositions({ subjectId, classId, ... })).
     let position: number | null = currentTR?.position ?? null
-    if (position == null && currentTR?.row && classArmIdForPositions) {
-      // Position field is set by the recompute routine; trust it even if stale.
+    if (position == null && currentTR?.row && classIdForPositions) {
       position = currentTR.row.position ?? null
     }
 
     // For class average: take the current-term totals of ALL students in this
-    // subject+classArm+session+term (computed in aggregate after the loop).
+    // subject+class+session+term (computed in aggregate after the loop).
     if (currentTR?.total != null) {
       totalsSumForAverage += currentTR.total
       totalsCountForAverage += 1
@@ -350,13 +355,13 @@ export async function GET(req: NextRequest) {
   }
 
   // Class average: average of the current-term totals of all results for
-  // this (classArm, session, term). This gives a meaningful "class average"
+  // this (class, session, term). This gives a meaningful "class average"
   // for the report card footer.
   let classAverage: number | null = null
-  if (classArmIdForPositions) {
+  if (classIdForPositions) {
     const agg = await db.result.aggregate({
       where: {
-        classArmId: classArmIdForPositions,
+        classId: classIdForPositions,
         sessionId: session.id,
         termId: term.id,
         total: { not: null },
@@ -368,7 +373,7 @@ export async function GET(req: NextRequest) {
       classAverage = Math.round(agg._avg.total * 100) / 100
     }
   }
-  // Fallback if no class arm snapshot — use just this student's totals
+  // Fallback if no class snapshot — use just this student's totals
   if (classAverage == null && totalsCountForAverage > 0) {
     classAverage = Math.round((totalsSumForAverage / totalsCountForAverage) * 100) / 100
   }
@@ -412,7 +417,6 @@ export async function GET(req: NextRequest) {
       admissionNumber: student.admissionNumber,
       fullName,
       className: student.class?.name ?? '-',
-      classArmName: student.classArm?.fullName ?? student.classArm?.name ?? '-',
       gender: student.gender ?? null,
     },
     subjects,

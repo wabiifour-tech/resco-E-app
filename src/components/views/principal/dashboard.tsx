@@ -5,7 +5,6 @@ import {
   Users,
   GraduationCap,
   Layers,
-  Boxes,
   BookOpen,
   CalendarDays,
   ClipboardList,
@@ -39,7 +38,6 @@ type PrincipalDashboard = {
     students: number
     studentsActive: number
     classes: number
-    classArms: number
     subjects: number
   }
   current: {
@@ -69,10 +67,10 @@ type QuickLink = {
 const QUICK_LINKS: QuickLink[] = [
   { view: 'teachers', label: 'Teachers', description: 'Manage staff accounts', icon: Users },
   { view: 'students', label: 'Students', description: 'Manage student records', icon: GraduationCap },
-  { view: 'classes', label: 'Classes & Arms', description: 'Classes and class arms', icon: Layers },
+  { view: 'classes', label: 'Classes', description: 'Manage school classes', icon: Layers },
   { view: 'subjects', label: 'Subjects', description: 'Subject catalogue', icon: BookOpen },
   { view: 'sessions', label: 'Sessions & Terms', description: 'Academic sessions', icon: CalendarDays },
-  { view: 'assignments', label: 'Assignments', description: 'Teacher → arm/subject', icon: ClipboardList },
+  { view: 'assignments', label: 'Assignments', description: 'Teacher → class/subject', icon: ClipboardList },
   { view: 'remarks', label: 'Remarks', description: 'Predefined remarks', icon: MessageSquareQuote },
   { view: 'grading', label: 'Grading', description: 'Grade boundaries', icon: BarChart3 },
   { view: 'results', label: 'Results', description: 'Browse all results', icon: FileSpreadsheet },
@@ -255,7 +253,7 @@ export function PrincipalDashboard() {
         </h2>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {isLoading ? (
-            Array.from({ length: 7 }).map((_, i) => (
+            Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-28 w-full" />
             ))
           ) : (
@@ -278,11 +276,6 @@ export function PrincipalDashboard() {
                 icon={Layers}
                 label="Classes"
                 value={data?.counts.classes ?? 0}
-              />
-              <StatCard
-                icon={Boxes}
-                label="Class Arms"
-                value={data?.counts.classArms ?? 0}
               />
               <StatCard
                 icon={BookOpen}

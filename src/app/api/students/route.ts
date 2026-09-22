@@ -4,6 +4,10 @@ import { db } from '@/lib/db'
 import { logAudit } from '@/lib/audit'
 import { z } from 'zod'
 
+// RESCO eCard — Students API (FLAT structure, NO class arms).
+// A student belongs directly to a Class (no class arm).
+// Query/body fields use `classId` (NEVER classArmId / armId / arm).
+
 const createSchema = z.object({
   admissionNumber: z
     .string()
@@ -14,7 +18,6 @@ const createSchema = z.object({
   otherNames: z.string().trim().optional().nullable(),
   gender: z.enum(['MALE', 'FEMALE']).optional().nullable(),
   classId: z.string().min(1, 'Class is required'),
-  classArmId: z.string().optional().nullable(),
   active: z.boolean().optional().default(true),
 })
 
@@ -25,7 +28,6 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const q = url.searchParams.get('q')?.trim().toLowerCase() ?? ''
   const classId = url.searchParams.get('classId') ?? undefined
-  const armId = url.searchParams.get('armId') ?? undefined
   const active = url.searchParams.get('active') // 'true' | 'false' | undefined
 
   const where: any = {}
@@ -38,7 +40,6 @@ export async function GET(req: NextRequest) {
     ]
   }
   if (classId) where.classId = classId
-  if (armId) where.classArmId = armId
   if (active === 'true') where.active = true
   if (active === 'false') where.active = false
 
@@ -46,7 +47,6 @@ export async function GET(req: NextRequest) {
     where,
     include: {
       class: { select: { id: true, name: true } },
-      classArm: { select: { id: true, name: true, fullName: true } },
     },
     orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
   })
@@ -74,17 +74,6 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Selected class does not exist' }, { status: 400 })
   }
 
-  // Validate arm belongs to class if provided
-  if (data.classArmId) {
-    const arm = await db.classArm.findUnique({ where: { id: data.classArmId } })
-    if (!arm || arm.classId !== data.classId) {
-      return Response.json(
-        { error: 'Selected arm does not belong to the chosen class' },
-        { status: 400 },
-      )
-    }
-  }
-
   // Admission number unique
   const existingAdm = await db.student.findUnique({
     where: { admissionNumber: data.admissionNumber },
@@ -104,12 +93,10 @@ export async function POST(req: NextRequest) {
       otherNames: data.otherNames ?? null,
       gender: data.gender ?? null,
       classId: data.classId,
-      classArmId: data.classArmId ?? null,
       active: data.active,
     },
     include: {
       class: { select: { id: true, name: true } },
-      classArm: { select: { id: true, name: true, fullName: true } },
     },
   })
 
@@ -123,7 +110,7 @@ export async function POST(req: NextRequest) {
       admissionNumber: student.admissionNumber,
       name: `${student.firstName} ${student.lastName}`,
       classId: student.classId,
-      classArmId: student.classArmId,
+      className: klass.name,
     },
   })
 

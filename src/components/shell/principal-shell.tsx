@@ -37,7 +37,7 @@ export const PRINCIPAL_NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'teachers', label: 'Teachers', icon: Users },
   { key: 'students', label: 'Students', icon: GraduationCap },
-  { key: 'classes', label: 'Classes & Arms', icon: Layers },
+  { key: 'classes', label: 'Classes', icon: Layers },
   { key: 'subjects', label: 'Subjects', icon: BookOpen },
   { key: 'sessions', label: 'Academic Sessions', icon: CalendarRange },
   { key: 'terms', label: 'Terms', icon: ClipboardList },
