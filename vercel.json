@@ -2,6 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "installCommand": "bun install",
-  "buildCommand": "prisma generate && prisma db push --accept-data-loss && bun run db:seed && next build",
-  "functions": {}
+  "buildCommand": "next build"
 }
