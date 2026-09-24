@@ -697,3 +697,30 @@ Work Log:
 
 Stage Summary:
 - The school's actual logo now replaces the generic placeholder everywhere it appeared: login screen, app shell sidebar, mobile header, footer, loading splash, and report card header. The logo is sourced from the principal's School Settings (logoDataUrl) via a public /api/branding endpoint, with a static /school-logo.png fallback. If the principal uploads a new logo in Settings, it propagates app-wide automatically.
+
+---
+Task ID: 10 (GitHub + Vercel deploy prep)
+Agent: main (Z.ai Code)
+Task: Prepare RESCO eCard for GitHub push + Vercel deploy (no credentials available in sandbox, so code is made deploy-ready + commands provided).
+
+Work Log:
+- Investigated environment: git repo exists (branch main, prior auto-snapshots); NO GitHub/Vercel/Turso tokens in env; NO gh/vercel CLI installed; network egress to github.com + vercel.com works (200). → Cannot push/deploy programmatically; prepared everything deploy-ready + documented commands.
+- Cleaned the repo: untracked .env (had the local SQLite path), db/custom.db (the SQLite file with password hashes — security), .zscripts/, upload/. Kept files on disk. Updated .gitignore: /db, /.zscripts, /upload ignored; .env* ignored with !.env.example exception so the template is committed.
+- Handled the SQLite-on-Vercel limitation: Vercel serverless has no persistent FS, so a local SQLite file is lost on cold start. Chose Turso (hosted libSQL/SQLite) — keeps the Prisma sqlite schema, local dev stays on the file, production uses a libsql:// URL via the driver adapter.
+  - `bun add @prisma/adapter-libsql @libsql/client`.
+  - Added `previewFeatures = ["driverAdapters"]` to the Prisma generator; regenerated the client.
+  - Created src/lib/prisma-client.ts: conditional factory — file: URL → standard PrismaClient; libsql: URL → new PrismaClient({ adapter: new PrismaLibSql(libsql) }). Uses the correct export name `PrismaLibSql` (lowercase ql), not `PrismaLibSQL`.
+  - Updated src/lib/db.ts to re-export the shared client; updated src/scripts/seed.ts to use it.
+- Hardened the seed for production re-deploys: added a skip-if-users-exist guard (so re-deploys never overwrite the principal's runtime edits to subjects/classes/curriculum); added a SEED_DEMO env flag (prod seeds the principal + 15-class curriculum + 42-subject library + ClassSubject defaults + grade boundaries + remarks + session/terms; demo teachers/student are opt-in via SEED_DEMO=1).
+- Deploy config:
+  - vercel.json: framework=nextjs, installCommand=bun install, buildCommand=`prisma generate && prisma db push --accept-data-loss && bun run db:seed && next build` (syncs schema + guarded seed on every deploy).
+  - .env.example: documents DATABASE_URL / DATABASE_AUTH_TOKEN / NEXTAUTH_SECRET / PRINCIPAL_PASSWORD / SEED_DEMO.
+  - package.json: postinstall runs `prisma generate`; added `db:seed` script.
+  - README.md: full walkthrough — local dev, default credentials, GitHub push, Turso DB creation, Vercel import + env vars + deploy.
+- Verified: `bun run lint` passes (0 errors); seed runs + skip-guard works ("DB already has 3 user(s) — skipping seed."); local dev healthy (GET / 200, GET /api/branding 200); `.env` untracked, `.env.example` tracked.
+- Committed: `4db33de RESCO eCard — production-ready for Vercel (Turso libSQL) + branding logo`.
+
+Stage Summary:
+- The repo is clean + deploy-ready. The user pushes to GitHub then imports to Vercel (exact commands in README.md § "Deploy to Vercel"). Required prod env vars: DATABASE_URL (libsql://), DATABASE_AUTH_TOKEN (Turso token), NEXTAUTH_SECRET, PRINCIPAL_PASSWORD (optional, first deploy only). The build auto-provisions the schema + seeds on first deploy.
+- Local dev unchanged: file-based SQLite, `bun run db:push` + `bun run db:seed` + `bun run dev`.
+- I could NOT actually push to GitHub or deploy to Vercel (no credentials in the sandbox). The user runs the final `git remote add` + `git push` + Vercel import themselves.
