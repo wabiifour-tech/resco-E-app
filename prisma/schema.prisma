@@ -6,7 +6,8 @@
 // Students belong directly to a Class. Teacher assignments are (Teacher, Class, Subject).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {

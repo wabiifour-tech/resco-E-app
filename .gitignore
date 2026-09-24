@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but keep the example template (no secrets) so deployers know what to set
+!.env.example
 
 # vercel
 .vercel
@@ -52,3 +54,17 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Local DB (use a hosted DB for production — see README)
+/db/*.db
+/db/*.db-journal
+/db/
+
+# Local dev scripts / sandbox state
+/.zscripts/
+/.z-ai-config/
+
+# Uploaded files (transient)
+/upload/
+
+# OS
+Thumbs.db

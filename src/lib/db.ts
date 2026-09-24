@@ -1,13 +1,6 @@
-import { PrismaClient } from '@prisma/client'
+import { prismaClient } from '@/lib/prisma-client'
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
-}
-
-export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: ['error', 'warn'],
-  })
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+// Shared Prisma client used by all API routes + the seed script.
+// Resolves to a local-SQLite PrismaClient in dev, or a libSQL-adapter
+// PrismaClient when DATABASE_URL points at a Turso (libsql://) DB in production.
+export const db = prismaClient

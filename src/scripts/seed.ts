@@ -1,7 +1,12 @@
-import { PrismaClient } from '@prisma/client'
+import { prismaClient } from '../lib/prisma-client'
 import { hashPassword } from '../lib/password'
 
-const db = new PrismaClient()
+const db = prismaClient
+
+// Set SEED_DEMO=1 to also create demo teachers + test student (Mr. Ade,
+// Mrs. Adebayo, John Doe). Defaults to OFF for production deploys so the
+// prod DB only gets the principal account + the curriculum library.
+const SEED_DEMO = process.env.SEED_DEMO === '1'
 
 // The school's flat class structure (NO class arms).
 const CLASS_DEFS: { name: string; level: number; category: string }[] = [
@@ -197,6 +202,15 @@ function classOfferedSubjects(className: string): string[] {
 }
 
 async function main() {
+  // ── Guard: never re-seed an already-populated DB ───────────────────────
+  // Protects the principal's runtime edits to subjects/classes/curriculum
+  // from being overwritten on subsequent deploys.
+  const existingUsers = await db.user.count()
+  if (existingUsers > 0) {
+    console.log(`DB already has ${existingUsers} user(s) — skipping seed.`)
+    return
+  }
+
   // ── School settings (singleton) ────────────────────────────────────────
   await db.schoolSetting.upsert({
     where: { id: 'singleton' },
@@ -229,48 +243,53 @@ async function main() {
     console.log('Principal already exists')
   }
 
-  // ── Demo teacher 1: Mr. Ade → JSS 1 — Mathematics ─────────────────────
-  const teacher1Email = 'teacher@resco.edu.ng'
-  const teacher1Pass = 'Teacher@2026'
-  let teacher1User = await db.user.findUnique({
-    where: { email: teacher1Email },
-    include: { teacher: true },
-  })
-  if (!teacher1User) {
-    teacher1User = await db.user.create({
-      data: {
-        email: teacher1Email,
-        name: 'Mr. Ade Demo',
-        role: 'TEACHER',
-        passwordHash: hashPassword(teacher1Pass),
-        active: true,
-        teacher: { create: {} },
-      },
+  // ── Demo teachers (only when SEED_DEMO=1) ─────────────────────────────
+  // Mr. Ade → JSS 1 — Mathematics; Mrs. Adebayo → multi-class test scenario.
+  // Excluded from production deploys by default.
+  let teacher1User: { id: string; teacher: { id: string } | null } | null = null
+  let teacher2User: { id: string; teacher: { id: string } | null } | null = null
+  if (SEED_DEMO) {
+    const teacher1Email = 'teacher@resco.edu.ng'
+    const teacher1Pass = 'Teacher@2026'
+    teacher1User = await db.user.findUnique({
+      where: { email: teacher1Email },
       include: { teacher: true },
     })
-    console.log(`Demo teacher 1 created: ${teacher1Email} / ${teacher1Pass}`)
-  }
+    if (!teacher1User) {
+      teacher1User = await db.user.create({
+        data: {
+          email: teacher1Email,
+          name: 'Mr. Ade Demo',
+          role: 'TEACHER',
+          passwordHash: hashPassword(teacher1Pass),
+          active: true,
+          teacher: { create: {} },
+        },
+        include: { teacher: true },
+      })
+      console.log(`Demo teacher 1 created: ${teacher1Email} / ${teacher1Pass}`)
+    }
 
-  // ── Demo teacher 2: Mrs. Adebayo (multi-class multi-subject test) ──────
-  const teacher2Email = 'adebayo@resco.edu.ng'
-  const teacher2Pass = 'Adebayo@2026'
-  let teacher2User = await db.user.findUnique({
-    where: { email: teacher2Email },
-    include: { teacher: true },
-  })
-  if (!teacher2User) {
-    teacher2User = await db.user.create({
-      data: {
-        email: teacher2Email,
-        name: 'Mrs. Adebayo',
-        role: 'TEACHER',
-        passwordHash: hashPassword(teacher2Pass),
-        active: true,
-        teacher: { create: {} },
-      },
+    const teacher2Email = 'adebayo@resco.edu.ng'
+    const teacher2Pass = 'Adebayo@2026'
+    teacher2User = await db.user.findUnique({
+      where: { email: teacher2Email },
       include: { teacher: true },
     })
-    console.log(`Demo teacher 2 created: ${teacher2Email} / ${teacher2Pass}`)
+    if (!teacher2User) {
+      teacher2User = await db.user.create({
+        data: {
+          email: teacher2Email,
+          name: 'Mrs. Adebayo',
+          role: 'TEACHER',
+          passwordHash: hashPassword(teacher2Pass),
+          active: true,
+          teacher: { create: {} },
+        },
+        include: { teacher: true },
+      })
+      console.log(`Demo teacher 2 created: ${teacher2Email} / ${teacher2Pass}`)
+    }
   }
 
   // ── Classes (flat — no arms) ────────────────────────────────────────────
@@ -377,9 +396,9 @@ async function main() {
     data: { currentSessionId: session.id, currentTermId: firstTerm?.id ?? null },
   })
 
-  // ── Demo student: John Doe in JSS 1 ─────────────────────────────────────
+  // ── Demo student: John Doe in JSS 1 (SEED_DEMO only) ───────────────────
   const jss1 = await db.class.findUnique({ where: { name: 'JSS 1' } })
-  if (jss1) {
+  if (SEED_DEMO && jss1) {
     let john = await db.student.findUnique({ where: { admissionNumber: 'RES/2026/001' } })
     if (!john) {
       john = await db.student.create({
@@ -455,8 +474,12 @@ async function main() {
 
   console.log('Seed complete.')
   console.log('Principal login:', principalEmail, '/', principalPass)
-  console.log('Teacher 1 login:', teacher1Email, '/', teacher1Pass, '(JSS 1 — Mathematics)')
-  console.log('Teacher 2 login:', teacher2Email, '/', teacher2Pass, '(Primary 2/3/5 — multi-class multi-subject)')
+  if (SEED_DEMO) {
+    console.log('Demo teacher 1: teacher@resco.edu.ng / Teacher@2026 (JSS 1 — Mathematics)')
+    console.log('Demo teacher 2: adebayo@resco.edu.ng / Adebayo@2026 (Primary 2/3/5 — multi-class multi-subject)')
+  } else {
+    console.log('(Demo teachers not created — set SEED_DEMO=1 to include them.)')
+  }
 }
 
 main()
