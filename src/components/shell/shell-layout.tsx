@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/s
 import { LogOut, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SchoolLogo } from '@/components/shell/school-logo'
+import { InstallAppButton } from '@/components/pwa/install-app-button'
 
 export type NavItem = {
   key: string
@@ -151,10 +152,14 @@ export function ShellLayout({
         <main className="flex-1 min-w-0 flex flex-col">
           <div className="flex-1 p-4 md:p-6 max-w-[1400px] w-full mx-auto">{children}</div>
           <footer className="mt-auto border-t bg-background py-3 px-4 text-center text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <SchoolLogo className="h-4 w-4" />
-              RESCO eCard · Redeemer&apos;s Schools and College, Owotoro · Excellence, Knowledge, and Wisdom
-            </span>
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5">
+              <span className="inline-flex items-center gap-1.5">
+                <SchoolLogo className="h-4 w-4" />
+                RESCO eCard · Redeemer&apos;s Schools and College, Owotoro · Excellence, Knowledge, and Wisdom
+              </span>
+              <span className="hidden sm:inline text-border">·</span>
+              <InstallAppButton variant="ghost" size="sm" className="h-6 text-[11px] px-2" label="Install app" />
+            </div>
           </footer>
         </main>
       </div>

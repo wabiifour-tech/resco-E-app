@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Loader2, Lock, Mail, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
+import { InstallAppButton } from '@/components/pwa/install-app-button'
 
 type Branding = {
   schoolName: string
@@ -139,6 +140,11 @@ export function LoginScreen() {
               </p>
             </CardFooter>
           </Card>
+
+          <div className="flex flex-col items-center gap-2 mt-2">
+            <p className="text-[11px] text-muted-foreground">Install RESCO eCard on your device</p>
+            <InstallAppButton variant="outline" size="sm" label="Download App" />
+          </div>
 
           <p className="text-center text-[11px] text-muted-foreground mt-4">
             © {new Date().getFullYear()} Redeemer&apos;s Schools and College. All rights reserved.
