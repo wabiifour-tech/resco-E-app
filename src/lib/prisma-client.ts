@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client'
-import { PrismaLibSql } from '@prisma/adapter-libsql'
-import { createClient } from '@libsql/client'
+import { PrismaLibSQL } from '@prisma/adapter-libsql'
 
 /**
  * Conditional Prisma client factory.
@@ -16,11 +15,11 @@ import { createClient } from '@libsql/client'
 function createPrismaClient(): PrismaClient {
   const url = process.env.DATABASE_URL ?? ''
   if (url.startsWith('libsql:')) {
-    const libsql = createClient({
+    // The PrismaLibSQL adapter (v6) creates its own libsql client from {url, authToken}.
+    const adapter = new PrismaLibSQL({
       url,
       authToken: process.env.DATABASE_AUTH_TOKEN || undefined,
     })
-    const adapter = new PrismaLibSql(libsql)
     return new PrismaClient({ adapter } as any)
   }
   return new PrismaClient({
