@@ -202,14 +202,11 @@ function classOfferedSubjects(className: string): string[] {
 }
 
 async function main() {
-  // ── Guard: never re-seed an already-populated DB ───────────────────────
-  // Protects the principal's runtime edits to subjects/classes/curriculum
-  // from being overwritten on subsequent deploys.
-  const existingUsers = await db.user.count()
-  if (existingUsers > 0) {
-    console.log(`DB already has ${existingUsers} user(s) — skipping seed.`)
-    return
-  }
+  // Capture freshness BEFORE creating the principal, so we can skip the
+  // curriculum seed on an already-populated DB (protects the principal's
+  // runtime edits to subjects/classes/curriculum) while still ensuring the
+  // principal account + password are correct.
+  const isFresh = (await db.user.count()) === 0
 
   // ── School settings (singleton) ────────────────────────────────────────
   await db.schoolSetting.upsert({
@@ -224,9 +221,11 @@ async function main() {
     },
   })
 
-  // ── Principal user ──────────────────────────────────────────────────────
+  // ── Principal user (upsert — always ensure the seeded password is set) ──
+  // The default password is "affordables". Override with PRINCIPAL_PASSWORD
+  // only if you want a different value at seed time.
   const principalEmail = 'principal@resco.edu.ng'
-  const principalPass = process.env.PRINCIPAL_PASSWORD || 'Principal@2026'
+  const principalPass = process.env.PRINCIPAL_PASSWORD || 'affordables'
   const existingPrincipal = await db.user.findUnique({ where: { email: principalEmail } })
   if (!existingPrincipal) {
     await db.user.create({
@@ -240,7 +239,18 @@ async function main() {
     })
     console.log(`Principal created: ${principalEmail} / ${principalPass}`)
   } else {
-    console.log('Principal already exists')
+    // Ensure the password matches the seeded value (re-provisioning safety).
+    await db.user.update({
+      where: { id: existingPrincipal.id },
+      data: { passwordHash: hashPassword(principalPass), name: 'The Principal', role: 'PRINCIPAL', active: true },
+    })
+    console.log(`Principal password reset to the seeded value: ${principalEmail} / ${principalPass}`)
+  }
+
+  // ── Curriculum seed — only on a fresh DB ───────────────────────────────
+  if (!isFresh) {
+    console.log('DB already has users — skipping curriculum seed (principal account was ensured above).')
+    return
   }
 
   // ── Demo teachers (only when SEED_DEMO=1) ─────────────────────────────

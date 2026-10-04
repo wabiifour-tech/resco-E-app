@@ -38,11 +38,11 @@ bun run dev                    # http://localhost:3000
 
 | Role | Email | Password |
 |---|---|---|
-| Principal | `principal@resco.edu.ng` | `Principal@2026` (override with `PRINCIPAL_PASSWORD`) |
+| Principal | `principal@resco.edu.ng` | `affordables` (override with `PRINCIPAL_PASSWORD`) |
 | Teacher (JSS 1 — Mathematics) | `teacher@resco.edu.ng` | `Teacher@2026` (demo only, `SEED_DEMO=1`) |
 | Teacher (Primary 2/3/5) | `adebayo@resco.edu.ng` | `Adebayo@2026` (demo only, `SEED_DEMO=1`) |
 
-> For production, set `PRINCIPAL_PASSWORD` to a strong value before the first deploy so the seeded principal account doesn't use the default password.
+> The seed **upserts** the principal — so running `bun run db:seed` always sets the principal password to `affordables` (or `PRINCIPAL_PASSWORD` if set). Change it via the UI after first login.
 
 ---
 
