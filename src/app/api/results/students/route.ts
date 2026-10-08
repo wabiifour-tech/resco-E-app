@@ -8,9 +8,11 @@ export const dynamic = 'force-dynamic'
 // GET /api/results/students?classId=&active=true&q=
 //
 // Returns students in a class. Auth:
-//   - Principal: any class
+//   - Principal without a Teacher record: any class (full-school access).
+//   - Principal with a Teacher record: only classes she is assigned to (any
+//     subject there) — same scoping as a teacher, so her teacher views
+//     (Enter Results, My Students, Report Cards) only see her own classes.
 //   - Teacher: must be assigned to (classId, ANY subject) of that class.
-//     We check if the teacher has at least one assignment for that class.
 
 export async function GET(req: NextRequest) {
   const u = await getSession()
@@ -25,11 +27,11 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: 'classId is required' }, { status: 400 })
   }
 
-  // Authorization
-  if (u.role === 'TEACHER') {
-    // Teacher must be assigned to ANY subject of this class
+  // Authorization: if the caller has a teacherId (teacher OR principal-with-a
+  // Teacher record), they must have at least one assignment for this class.
+  if (u.teacherId) {
     const assignment = await db.teacherAssignment.findFirst({
-      where: { teacherId: u.teacherId ?? '', classId },
+      where: { teacherId: u.teacherId, classId },
     })
     if (!assignment) {
       return Response.json(

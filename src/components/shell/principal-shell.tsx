@@ -32,7 +32,16 @@ import { PrincipalApprovals } from '@/components/views/principal/approvals'
 import { PrincipalReportCards } from '@/components/views/principal/report-cards'
 import { PrincipalAudit } from '@/components/views/principal/audit'
 import { PrincipalSettings } from '@/components/views/principal/settings'
+import { TeacherResultsEntry } from '@/components/views/teacher/results-entry'
+import { TeacherMyStudents } from '@/components/views/teacher/my-students'
+import { TeacherReportCards } from '@/components/views/teacher/report-cards'
 
+// The principal's shell. The principal is ALSO a teacher (with a 1:1 Teacher
+// record) so she can teach subjects for classes she's assigned to. The
+// "Teacher Tools" group below the principal items renders the teacher views
+// — they consume /api/dashboard/teacher, /api/results/bootstrap, etc. which
+// scope the principal to HER own assignments. Keys use a `t-` prefix to
+// avoid colliding with the principal's `results`/`report-cards` keys.
 export const PRINCIPAL_NAV: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'teachers', label: 'Teachers', icon: Users },
@@ -49,6 +58,16 @@ export const PRINCIPAL_NAV: NavItem[] = [
   { key: 'report-cards', label: 'Report Cards', icon: FileText },
   { key: 'audit', label: 'Audit Logs', icon: History },
   { key: 'settings', label: 'School Settings', icon: Settings },
+  // ── Teacher Tools (scoped to the principal's own assignments) ────────
+  {
+    key: 't-results-entry',
+    label: 'Enter Results',
+    icon: FileSpreadsheet,
+    divider: true,
+    heading: 'Teacher Tools',
+  },
+  { key: 't-my-students', label: 'My Students', icon: GraduationCap },
+  { key: 't-report-cards', label: 'Report Cards', icon: FileText },
 ]
 
 export function PrincipalShell() {
@@ -71,6 +90,11 @@ export function PrincipalShell() {
     'report-cards': <PrincipalReportCards />,
     audit: <PrincipalAudit />,
     settings: <PrincipalSettings />,
+    // Teacher Tools (scoped to the principal's own assignments via the
+    // /api/dashboard/teacher + /api/results/* scoping changes).
+    't-results-entry': <TeacherResultsEntry />,
+    't-my-students': <TeacherMyStudents />,
+    't-report-cards': <TeacherReportCards />,
   }
 
   return (

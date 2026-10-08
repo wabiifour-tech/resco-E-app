@@ -79,11 +79,27 @@ export async function POST(req: NextRequest) {
   let skippedAssignments = 0
   let createdClassTeacher = 0
   let skippedClassTeacher = 0
+  let autoOfferedSubjects = 0 // ClassSubject rows auto-created as a side-effect
 
   for (const entry of entries) {
-    const klass = classMap.get(entry.classId)!
     // Subject-teaching assignments
     for (const subjectId of entry.subjectIds) {
+      // Auto-offer the subject for the class if it isn't already. This keeps
+      // result-entry authorization (`isSubjectOfferedForClass`) working
+      // without making the principal separately add the subject via Subject
+      // Management → Class Subjects. Newly-added library subjects (e.g.
+      // Accounting, Commerce) become "offered" for a class as a side-effect
+      // of assigning a teacher to them.
+      const existingOffer = await db.classSubject.findUnique({
+        where: { classId_subjectId: { classId: entry.classId, subjectId } },
+      })
+      if (!existingOffer) {
+        await db.classSubject.create({
+          data: { classId: entry.classId, subjectId },
+        })
+        autoOfferedSubjects++
+      }
+
       const exists = await db.teacherAssignment.findUnique({
         where: { teacherId_classId_subjectId: { teacherId, classId: entry.classId, subjectId } },
       })
@@ -128,6 +144,7 @@ export async function POST(req: NextRequest) {
       skippedAssignments,
       createdClassTeacher,
       skippedClassTeacher,
+      autoOfferedSubjects,
     },
   })
 
@@ -138,5 +155,6 @@ export async function POST(req: NextRequest) {
     skippedAssignments,
     createdClassTeacher,
     skippedClassTeacher,
+    autoOfferedSubjects,
   })
 }

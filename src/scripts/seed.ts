@@ -224,27 +224,60 @@ async function main() {
   // ── Principal user (upsert — always ensure the seeded password is set) ──
   // The default password is "affordables". Override with PRINCIPAL_PASSWORD
   // only if you want a different value at seed time.
+  //
+  // The principal is also a teacher of some classes/subjects, so we ensure a
+  // 1:1 linked Teacher record exists. This is idempotent: a re-seed against
+  // an existing prod DB (where the principal was originally created WITHOUT a
+  // Teacher record) will create the missing Teacher record and link it.
   const principalEmail = 'principal@resco.edu.ng'
   const principalPass = process.env.PRINCIPAL_PASSWORD || 'affordables'
-  const existingPrincipal = await db.user.findUnique({ where: { email: principalEmail } })
+  const existingPrincipal = await db.user.findUnique({
+    where: { email: principalEmail },
+    include: { teacher: true },
+  })
+  let principalId: string
+  let principalTeacherId: string | null = null
   if (!existingPrincipal) {
-    await db.user.create({
+    const created = await db.user.create({
       data: {
         email: principalEmail,
         name: 'The Principal',
         role: 'PRINCIPAL',
         passwordHash: hashPassword(principalPass),
         active: true,
+        teacher: { create: {} },
       },
+      include: { teacher: true },
     })
+    principalId = created.id
+    principalTeacherId = created.teacher?.id ?? null
     console.log(`Principal created: ${principalEmail} / ${principalPass}`)
   } else {
     // Ensure the password matches the seeded value (re-provisioning safety).
     await db.user.update({
       where: { id: existingPrincipal.id },
-      data: { passwordHash: hashPassword(principalPass), name: 'The Principal', role: 'PRINCIPAL', active: true },
+      data: {
+        passwordHash: hashPassword(principalPass),
+        name: 'The Principal',
+        role: 'PRINCIPAL',
+        active: true,
+      },
     })
-    console.log(`Principal password reset to the seeded value: ${principalEmail} / ${principalPass}`)
+    principalId = existingPrincipal.id
+    principalTeacherId = existingPrincipal.teacher?.id ?? null
+    console.log(
+      `Principal password reset to the seeded value: ${principalEmail} / ${principalPass}`,
+    )
+  }
+
+  // ── Ensure the principal has a linked Teacher record (1:1 with User) ──────
+  // The principal is also a teacher for some classes/subjects. This runs on
+  // EVERY seed (even on existing DBs) so a prod DB originally seeded without
+  // a principal Teacher record gets one when the seed re-runs.
+  if (!principalTeacherId) {
+    const created = await db.teacher.create({ data: { userId: principalId } })
+    principalTeacherId = created.id
+    console.log('Principal Teacher record created (principal can now be assigned to classes/subjects).')
   }
 
   // ── Curriculum seed — only on a fresh DB ───────────────────────────────

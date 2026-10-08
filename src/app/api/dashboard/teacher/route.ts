@@ -5,18 +5,26 @@ import { getActiveSessionAndTerm } from '@/lib/session'
 export const dynamic = 'force-dynamic'
 
 // GET /api/dashboard/teacher
-// Teacher-only dashboard summary: their identity, current session+term,
-// their assignments (with distinct classes + subjects), and result
-// status counts for their assigned (classId, subjectId) combos in the
-// active session+term. Principals are forbidden (their dashboard lives
-// at /api/dashboard/principal).
+// Teacher-facing dashboard summary: the caller's identity, current
+// session+term, their assignments (with distinct classes + subjects), and
+// result status counts for their assigned (classId, subjectId) combos in
+// the active session+term.
+//
+// Authorization: any logged-in user with a Teacher record — i.e. role
+// 'TEACHER' OR role 'PRINCIPAL' with `teacherId` set. A principal without a
+// Teacher record gets 403 (her dashboard lives at /api/dashboard/principal).
+//
+// The principal (with a Teacher record) is scoped to HER own assignments
+// here — same as any teacher. The principal's full-school access lives in
+// the principal dashboard + Results + Approvals views (separate endpoints).
 // The distinct-class list uses `class: { id, name }` (NOT classArm).
 export async function GET() {
   const u = await getSession()
   if (!u) {
     return Response.json({ error: 'Authentication required' }, { status: 401 })
   }
-  if (u.role !== 'TEACHER' || !u.teacherId) {
+  // Allow teachers OR principals who also have a Teacher record.
+  if (!u.teacherId) {
     return Response.json({ error: 'Teacher access required' }, { status: 403 })
   }
 

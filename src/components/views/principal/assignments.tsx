@@ -42,13 +42,18 @@ import {
 // RESCO eCard — Principal Teacher Assignments view.
 //
 // The principal can configure a teacher's ENTIRE assignment set in one workflow:
-//   1. Select teacher
+//   1. Select teacher (includes the principal herself if she has a Teacher
+//      record, so she can be assigned to classes/subjects)
 //   2. Tick classes they teach
-//   3. For each checked class: tick offered subjects + optionally class-teacher flag
-//   4. Save → POST /api/assignments/bulk (idempotent "add these")
+//   3. For each checked class: tick subjects (ALL active library subjects are
+//      listed — offered ones are badged; already-assigned ones are
+//      pre-checked) + optionally class-teacher flag
+//   4. Save → POST /api/assignments/bulk (idempotent "add these"; auto-offers
+//      any newly-checked subject for the class so result-entry authorization
+//      keeps working without a separate Subject Management step)
 //
-// Below the form: a grouped display of all current assignments (by teacher or by
-// class) with per-subject remove (DELETE /api/assignments/[id]) and a
+// Below the form: a grouped display of all current assignments (by teacher or
+// by class) with per-subject remove (DELETE /api/assignments/[id]) and a
 // class-teacher toggle (POST/DELETE /api/class-teachers).
 
 type Assignment = {
@@ -111,6 +116,7 @@ type BulkResponse = {
   skippedAssignments: number
   createdClassTeacher: number
   skippedClassTeacher: number
+  autoOfferedSubjects: number
 }
 
 type TeacherGroup = {
@@ -153,6 +159,8 @@ export function PrincipalAssignments() {
   const [teacherId, setTeacherId] = useState('')
   const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set())
   const [perClass, setPerClass] = useState<Record<string, ClassSelection>>({})
+  // Per-class subject search (filter the per-class subject chip list)
+  const [perClassSearch, setPerClassSearch] = useState<Record<string, string>>({})
 
   const { data, isLoading } = useQuery({
     queryKey: ['assignments'],
@@ -169,13 +177,6 @@ export function PrincipalAssignments() {
 
   const assignments = data?.assignments ?? []
   const classTeachers = data?.classTeachers ?? []
-
-  // Lookup of subject master list (for the bulk form's offered-subject chips)
-  const subjectMap = useMemo(() => {
-    const m = new Map<string, SubjectOption>()
-    for (const s of options?.subjects ?? []) m.set(s.id, s)
-    return m
-  }, [options?.subjects])
 
   // Sorted classes (level → name) for the form's checkbox grid
   const sortedClasses = useMemo(() => {
@@ -198,6 +199,46 @@ export function PrincipalAssignments() {
   }, [sortedClasses])
 
   // ---- Bulk form handlers ----
+  // Changing the teacher resets the per-class selections (the pre-checked
+  // subjects are teacher-specific, so they must be re-derived for the new
+  // teacher).
+  function changeTeacher(id: string) {
+    setTeacherId(id)
+    setPerClass({})
+    setSelectedClasses(new Set())
+    setPerClassSearch({})
+  }
+
+  function isClassTeacherOf(tId: string, cId: string): boolean {
+    return classTeachers.some((ct) => ct.teacherId === tId && ct.classId === cId)
+  }
+
+  // Subject ids already ASSIGNED to (teacherId, classId) — used to pre-check
+  // the chips when a class is toggled on, reflecting the current state.
+  const assignedByTeacherClass = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    for (const a of assignments) {
+      const key = `${a.teacherId}|${a.classId}`
+      let s = m.get(key)
+      if (!s) {
+        s = new Set<string>()
+        m.set(key, s)
+      }
+      s.add(a.subjectId)
+    }
+    return m
+  }, [assignments])
+
+  // Subject ids OFFERED for each class (from ClassSubject) — used to show an
+  // "Offered" badge on the chip so the principal can see curriculum state.
+  const offeredByClass = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    for (const [cId, arr] of Object.entries(options?.classSubjects ?? {})) {
+      m.set(cId, new Set(arr))
+    }
+    return m
+  }, [options?.classSubjects])
+
   function toggleClass(id: string, on: boolean) {
     setSelectedClasses((prev) => {
       const next = new Set(prev)
@@ -205,6 +246,22 @@ export function PrincipalAssignments() {
       else next.delete(id)
       return next
     })
+    // When toggling ON, pre-populate the per-class selection with the subjects
+    // already ASSIGNED to (teacherId, classId) + the class-teacher flag if set.
+    if (on && teacherId) {
+      const assigned = assignedByTeacherClass.get(`${teacherId}|${id}`) ?? new Set<string>()
+      setPerClass((prev) =>
+        prev[id]
+          ? prev
+          : {
+              ...prev,
+              [id]: {
+                classTeacher: isClassTeacherOf(teacherId, id),
+                subjectIds: new Set(assigned),
+              },
+            },
+      )
+    }
   }
 
   function toggleClassTeacher(classId: string, on: boolean) {
@@ -231,13 +288,14 @@ export function PrincipalAssignments() {
   }
 
   function selectAllClass(classId: string) {
-    const offered = options?.classSubjects[classId] ?? []
+    // Select ALL active library subjects for this class (not just offered).
+    const all = (options?.subjects ?? []).map((s) => s.id)
     setPerClass((prev) => {
       const cur = prev[classId] ?? {
         classTeacher: false,
         subjectIds: new Set<string>(),
       }
-      return { ...prev, [classId]: { ...cur, subjectIds: new Set(offered) } }
+      return { ...prev, [classId]: { ...cur, subjectIds: new Set(all) } }
     })
   }
 
@@ -251,11 +309,21 @@ export function PrincipalAssignments() {
     })
   }
 
-  function offeredSubjectsFor(classId: string): SubjectOption[] {
-    const offered = options?.classSubjects[classId] ?? []
-    return offered
-      .map((sid) => subjectMap.get(sid))
-      .filter((s): s is SubjectOption => !!s)
+  // The per-class chip list shows ALL active library subjects (not just the
+  // offered ones), so the principal can check newly-added library subjects
+  // (e.g. Accounting, Commerce) without first offering them via Subject
+  // Management. Saving auto-creates the ClassSubject for any checked subject
+  // that isn't offered yet (handled in /api/assignments/bulk).
+  function allLibrarySubjects(): SubjectOption[] {
+    return options?.subjects ?? []
+  }
+
+  function perClassSearchFor(classId: string): string {
+    return perClassSearch[classId] ?? ''
+  }
+
+  function setPerClassSearchFor(classId: string, q: string) {
+    setPerClassSearch((prev) => ({ ...prev, [classId]: q }))
   }
 
   const selectedClassesList = sortedClasses.filter((c) =>
@@ -287,13 +355,24 @@ export function PrincipalAssignments() {
       })
     },
     onSuccess: (res) => {
+      const autoOfferNote =
+        res.autoOfferedSubjects > 0
+          ? `, ${res.autoOfferedSubjects} subject${
+              res.autoOfferedSubjects === 1 ? '' : 's'
+            } auto-offered to the class(es)`
+          : ''
       toast.success(
         `Saved — ${res.createdAssignments} assignment${
           res.createdAssignments === 1 ? '' : 's'
-        } created (${res.skippedAssignments} skipped), ${res.createdClassTeacher} class-teacher set`,
+        } created (${res.skippedAssignments} skipped), ${res.createdClassTeacher} class-teacher set${autoOfferNote}`,
       )
       setPerClass({})
       setSelectedClasses(new Set())
+      setPerClassSearch({})
+      // Invalidate the options cache so newly-added ClassSubjects are reflected
+      // (the bulk workflow auto-creates ClassSubject rows for new pairings).
+      qc.invalidateQueries({ queryKey: ['assignments-options'] })
+      qc.invalidateQueries({ queryKey: ['class-subjects'] })
       qc.invalidateQueries({ queryKey: ['assignments'] })
     },
     onError: (e: { message?: string }) =>
@@ -518,7 +597,7 @@ export function PrincipalAssignments() {
           {/* Step 1: Select teacher */}
           <div className="space-y-1.5">
             <Label htmlFor="bulk-teacher">Select Teacher</Label>
-            <Select value={teacherId} onValueChange={setTeacherId}>
+            <Select value={teacherId} onValueChange={changeTeacher}>
               <SelectTrigger id="bulk-teacher" className="w-full sm:max-w-sm">
                 <SelectValue placeholder="Choose a teacher" />
               </SelectTrigger>
@@ -531,6 +610,10 @@ export function PrincipalAssignments() {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-[11px] text-muted-foreground">
+              The list includes you (the principal) if you have a teacher
+              record — you can assign yourself to classes/subjects.
+            </p>
           </div>
 
           {/* Step 2: Select classes */}
@@ -581,10 +664,19 @@ export function PrincipalAssignments() {
             <div className="space-y-4">
               <Label>Subjects &amp; Class-Teacher Role</Label>
               {selectedClassesList.map((c) => {
-                const offered = offeredSubjectsFor(c.id)
+                const allSubs = allLibrarySubjects()
                 const sel = perClass[c.id]
                 const classTeacher = sel?.classTeacher ?? false
                 const selectedCount = sel?.subjectIds.size ?? 0
+                const offeredSet = offeredByClass.get(c.id) ?? new Set<string>()
+                const sq = perClassSearchFor(c.id).trim().toLowerCase()
+                const filteredSubs = allSubs.filter((s) => {
+                  if (!sq) return true
+                  return (
+                    s.name.toLowerCase().includes(sq) ||
+                    (s.code ?? '').toLowerCase().includes(sq)
+                  )
+                })
                 return (
                   <div
                     key={c.id}
@@ -594,7 +686,8 @@ export function PrincipalAssignments() {
                       <div>
                         <h3 className="font-medium">{c.name}</h3>
                         <p className="text-xs text-muted-foreground">
-                          {c.category ?? '—'}
+                          {c.category ?? '—'} · {offeredSet.size} subject
+                          {offeredSet.size === 1 ? '' : 's'} offered
                         </p>
                       </div>
                       <label className="inline-flex items-center gap-2 text-sm cursor-pointer rounded-md border px-3 py-1.5 hover:bg-accent min-h-[44px]">
@@ -608,17 +701,18 @@ export function PrincipalAssignments() {
                       </label>
                     </div>
                     <Separator />
-                    {offered.length === 0 ? (
+                    {allSubs.length === 0 ? (
                       <p className="text-sm text-muted-foreground italic">
-                        No subjects offered for this class yet — configure them
-                        in Subject Management.
+                        No subjects in the library yet — add some from Subject
+                        Management.
                       </p>
                     ) : (
                       <>
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                           <p className="text-xs text-muted-foreground">
-                            {selectedCount} of {offered.length} subject
-                            {offered.length === 1 ? '' : 's'} selected
+                            {selectedCount} of {allSubs.length} library subject
+                            {allSubs.length === 1 ? '' : 's'} selected ·{' '}
+                            {offeredSet.size} offered for {c.name}
                           </p>
                           <div className="flex gap-2">
                             <Button
@@ -639,33 +733,60 @@ export function PrincipalAssignments() {
                             </Button>
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                          {offered.map((s) => {
-                            const checked =
-                              sel?.subjectIds.has(s.id) ?? false
-                            return (
-                              <label
-                                key={s.id}
-                                className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm cursor-pointer hover:bg-accent min-h-[40px] ${
-                                  checked ? 'border-primary' : ''
-                                }`}
-                              >
-                                <Checkbox
-                                  checked={checked}
-                                  onCheckedChange={(v) =>
-                                    toggleSubject(c.id, s.id, !!v)
-                                  }
-                                />
-                                <span>{s.name}</span>
-                                {s.code && (
-                                  <span className="text-xs text-muted-foreground">
-                                    ({s.code})
-                                  </span>
-                                )}
-                              </label>
-                            )
-                          })}
+                        {/* Per-class subject search — narrows the chip list
+                            when the library is large. Shows ALL library
+                            subjects (offered, assigned, or new). */}
+                        <div className="relative w-full max-w-sm">
+                          <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Filter subjects by name or code…"
+                            value={perClassSearchFor(c.id)}
+                            onChange={(e) =>
+                              setPerClassSearchFor(c.id, e.target.value)
+                            }
+                            className="pl-8 h-9"
+                            aria-label={`Filter subjects for ${c.name}`}
+                          />
                         </div>
+                        {filteredSubs.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">
+                            No subjects match your search.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2 max-h-72 overflow-y-auto">
+                            {filteredSubs.map((s) => {
+                              const checked =
+                                sel?.subjectIds.has(s.id) ?? false
+                              const isOffered = offeredSet.has(s.id)
+                              return (
+                                <label
+                                  key={s.id}
+                                  className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm cursor-pointer hover:bg-accent min-h-[40px] ${
+                                    checked ? 'border-primary' : ''
+                                  }`}
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(v) =>
+                                      toggleSubject(c.id, s.id, !!v)
+                                    }
+                                  />
+                                  <span>{s.name}</span>
+                                  {s.code && (
+                                    <span className="text-xs text-muted-foreground">
+                                      ({s.code})
+                                    </span>
+                                  )}
+                                  {isOffered && (
+                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-800">
+                                      Offered
+                                    </span>
+                                  )}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>

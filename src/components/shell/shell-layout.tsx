@@ -13,6 +13,13 @@ export type NavItem = {
   label: string
   icon: React.ComponentType<{ className?: string }>
   badge?: number
+  /** When true, renders a small section divider + heading label above this
+   * item. Used to group related nav items (e.g. the principal's "Teacher
+   * Tools" section below her principal items). */
+  divider?: boolean
+  /** Optional heading label rendered above this item when `divider` is true.
+   * If omitted, only the divider line is rendered. */
+  heading?: string
 }
 
 function NavList({
@@ -29,32 +36,42 @@ function NavList({
   return (
     <nav className="flex flex-col gap-1 px-3 py-4 flex-1 overflow-y-auto">
       {navItems.map((item) => (
-        <button
-          key={item.key}
-          onClick={() => {
-            setView(item.key)
-            onNavigate?.()
-          }}
-          className={cn(
-            'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors text-left',
-            view === item.key
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
-          )}
-        >
-          <item.icon className="h-4 w-4 shrink-0" />
-          <span className="flex-1">{item.label}</span>
-          {item.badge ? (
-            <span
-              className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
-                view === item.key ? 'bg-primary-foreground/20' : 'bg-muted',
+        <div key={item.key} className="contents">
+          {item.divider && (
+            <div className="pt-3 mt-2 border-t border-border/70">
+              {item.heading && (
+                <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {item.heading}
+                </p>
               )}
-            >
-              {item.badge}
-            </span>
-          ) : null}
-        </button>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setView(item.key)
+              onNavigate?.()
+            }}
+            className={cn(
+              'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors text-left',
+              view === item.key
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+            )}
+          >
+            <item.icon className="h-4 w-4 shrink-0" />
+            <span className="flex-1">{item.label}</span>
+            {item.badge ? (
+              <span
+                className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded-full font-semibold',
+                  view === item.key ? 'bg-primary-foreground/20' : 'bg-muted',
+                )}
+              >
+                {item.badge}
+              </span>
+            ) : null}
+          </button>
+        </div>
       ))}
     </nav>
   )

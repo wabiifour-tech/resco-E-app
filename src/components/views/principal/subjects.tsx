@@ -125,6 +125,9 @@ export function PrincipalSubjects() {
       toast.success('Subject deleted')
       qc.invalidateQueries({ queryKey: ['principal', 'subjects'] })
       qc.invalidateQueries({ queryKey: ['class-subjects'] })
+      // So the Teacher Assignments workflow's per-class subject list reflects
+      // the deletion (the list shows all active library subjects).
+      qc.invalidateQueries({ queryKey: ['assignments-options'] })
     },
     onError: (e: any) => toast.error(e?.message ?? 'Failed to delete subject'),
   })
@@ -577,6 +580,10 @@ function SubjectFormDialogInner({
       toast.success(mode === 'create' ? 'Subject created' : 'Subject updated')
       qc.invalidateQueries({ queryKey: ['principal', 'subjects'] })
       qc.invalidateQueries({ queryKey: ['class-subjects'] })
+      // So newly-created/edited library subjects appear in the Teacher
+      // Assignments workflow's per-class subject list (which shows ALL
+      // active library subjects) without a manual refresh.
+      qc.invalidateQueries({ queryKey: ['assignments-options'] })
       onOpenChange(false)
     },
     onError: (e: any) => toast.error(e?.message ?? 'Failed to save subject'),

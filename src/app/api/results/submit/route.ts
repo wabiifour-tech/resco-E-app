@@ -114,13 +114,14 @@ export async function POST(req: NextRequest) {
   const rejected: { id: string; reason: string }[] = []
 
   for (const row of targetRows) {
-    // Auth check (teacher must be assigned; principal passes)
-    if (u.role === 'TEACHER') {
-      const ok = await requireTeacherAuthorized(row.classId, row.subjectId)
-      if (!ok) {
-        rejected.push({ id: row.id, reason: 'Not authorized' })
-        continue
-      }
+    // Auth check: the caller must be authorized for (row.classId, row.subjectId).
+    // `requireTeacherAuthorized` scopes BOTH teachers AND principals-with-a
+    // Teacher record to their own assignments. A principal without a Teacher
+    // record returns null here (not authorized for any submit).
+    const authU = await requireTeacherAuthorized(row.classId, row.subjectId)
+    if (!authU) {
+      rejected.push({ id: row.id, reason: 'Not authorized' })
+      continue
     }
 
     // Skip already-submitted/approved

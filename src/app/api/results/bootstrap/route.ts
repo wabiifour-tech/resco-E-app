@@ -18,6 +18,13 @@ export const dynamic = 'force-dynamic'
 //
 // Each assignment includes `class: { id, name }` (NOT classArm).
 // Auth: any logged-in user (principal or teacher).
+//
+// Scoping: a TEACHER sees only their own assignments. A PRINCIPAL with a
+// Teacher record is ALSO scoped to her own assignments here (same as a
+// teacher) — this is the endpoint her teacher views (Enter Results, My
+// Students, Report Cards) call. A principal without a Teacher record sees
+// all assignments (the principal's principal-views call separate endpoints
+// and don't rely on this scoping).
 
 export async function GET() {
   const u = await getSession()
@@ -25,9 +32,37 @@ export async function GET() {
 
   const { session, term } = await getActiveSessionAndTerm()
 
-  // Assignments
+  // Assignments — scope to the caller's own when they have a teacherId.
+  // This applies to teachers AND principals-with-a-Teacher-record (so the
+  // principal's teacher views only see her own assignments). A principal
+  // without a Teacher record still gets the full list (unchanged behaviour).
   let assignments: any[] = []
-  if (u.role === 'PRINCIPAL') {
+  if (u.teacherId) {
+    const rows = await db.teacherAssignment.findMany({
+      where: { teacherId: u.teacherId },
+      include: {
+        class: { select: { id: true, name: true, level: true, category: true } },
+        subject: { select: { id: true, name: true, code: true } },
+      },
+      orderBy: [
+        { class: { level: 'asc' } },
+        { class: { name: 'asc' } },
+        { subject: { name: 'asc' } },
+      ],
+    })
+    assignments = rows.map((a) => ({
+      id: a.id,
+      classId: a.classId,
+      className: a.class.name,
+      classLevel: a.class.level,
+      classCategory: a.class.category ?? null,
+      subjectId: a.subjectId,
+      subjectName: a.subject.name,
+      subjectCode: a.subject.code,
+    }))
+  } else if (u.role === 'PRINCIPAL') {
+    // Principal without a Teacher record — return the full list (with
+    // teacher names, for principal browsing).
     const rows = await db.teacherAssignment.findMany({
       include: {
         teacher: { include: { user: { select: { name: true, email: true } } } },
@@ -52,32 +87,6 @@ export async function GET() {
       subjectName: a.subject.name,
       subjectCode: a.subject.code,
     }))
-  } else {
-    // Teacher — only own, stripped of other teachers' data
-    if (u.teacherId) {
-      const rows = await db.teacherAssignment.findMany({
-        where: { teacherId: u.teacherId },
-        include: {
-          class: { select: { id: true, name: true, level: true, category: true } },
-          subject: { select: { id: true, name: true, code: true } },
-        },
-        orderBy: [
-          { class: { level: 'asc' } },
-          { class: { name: 'asc' } },
-          { subject: { name: 'asc' } },
-        ],
-      })
-      assignments = rows.map((a) => ({
-        id: a.id,
-        classId: a.classId,
-        className: a.class.name,
-        classLevel: a.class.level,
-        classCategory: a.class.category ?? null,
-        subjectId: a.subjectId,
-        subjectName: a.subject.name,
-        subjectCode: a.subject.code,
-      }))
-    }
   }
 
   // Remarks (active only, flat)
