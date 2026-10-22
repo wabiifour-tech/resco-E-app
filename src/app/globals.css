@@ -131,7 +131,23 @@
   body {
     background: white !important;
   }
-  /* Hide everything that's marked as no-print */
+  /* Hide the ENTIRE app (app shell, buttons, selectors, toasts, devtools),
+   * then reveal ONLY the report card. visibility:hidden keeps layout but
+   * makes everything invisible; we re-show .print-area and its children. */
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  /* Hard-hide overlays that should never print (toasts, devtools) */
+  [data-sonner-toaster],
+  [data-sonner-toast],
+  .toaster,
+  .sonner-toaster,
+  [data-nextjs-toast],
+  [data-nextjs-dialog],
   .no-print {
     display: none !important;
   }
@@ -161,8 +177,33 @@
     background: white !important;
     border-color: rgba(0, 0, 0, 0.7) !important;
   }
+  /* ─── Compact the report card to fit ONE A4 page ──────────────────────── */
+  .print-area {
+    font-size: 9.5pt;
+    line-height: 1.25;
+  }
+  .print-area h1 {
+    font-size: 16pt !important;
+  }
+  .print-area table {
+    font-size: 9pt !important;
+  }
+  .print-area table th,
+  .print-area table td {
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+  }
+  /* Keep the card on a single page — avoid awkward breaks */
+  .print-area,
+  .print-area > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }
 
+/* @page margin 0 removes the browser's default print header/footer (the date
+ * + page title like "10/22/26, 8:33 PM RESCO eCard | Login"). The report card
+ * provides its own internal padding via print:p-8. */
 @page {
-  margin: 12mm;
+  margin: 0;
 }

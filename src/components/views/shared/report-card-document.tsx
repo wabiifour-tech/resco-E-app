@@ -198,7 +198,7 @@ function CardView({ data }: { data: ReportCardData }) {
 
   return (
     <div className="print-area mx-auto w-full max-w-[820px] bg-white text-black print:shadow-none print:border-0 print:max-w-none print:w-full">
-      <div className="border border-black/70 p-6 sm:p-8 print:p-8 print:border-2 print:border-black bg-white text-black">
+      <div className="border border-black/70 p-6 sm:p-8 print:p-6 print:border-2 print:border-black bg-white text-black">
         {/* ─── Header: logo (left) + name/motto/address (center/right) ────── */}
         <header className="flex items-center gap-4 border-b-2 border-black/70 pb-4">
           <div className="shrink-0">
@@ -209,7 +209,7 @@ function CardView({ data }: { data: ReportCardData }) {
             <img
               src={s.logoDataUrl || '/school-logo.png'}
               alt="School logo"
-              className="h-20 w-20 object-contain print:h-20 print:w-20 rounded-full bg-white"
+              className="h-16 w-16 object-contain print:h-16 print:w-16 rounded-full bg-white"
               onError={(e) => {
                 // Final fallback: hide a broken image so the layout stays clean.
                 ;(e.currentTarget as HTMLImageElement).style.visibility = 'hidden'
