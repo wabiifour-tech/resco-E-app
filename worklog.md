@@ -784,3 +784,20 @@ Deviations:
 Files edited (12 total): `src/scripts/seed.ts`; `src/lib/auth.ts`; `src/app/api/dashboard/teacher/route.ts`; `src/app/api/results/bootstrap/route.ts`; `src/app/api/results/students/route.ts`; `src/app/api/results/submit/route.ts`; `src/app/api/assignments/options/route.ts`; `src/app/api/assignments/bulk/route.ts`; `src/components/views/principal/assignments.tsx`; `src/components/views/principal/subjects.tsx`; `src/components/shell/shell-layout.tsx`; `src/components/shell/principal-shell.tsx`.
 
 Work record: `/agent-ctx/11-full-stack-developer.md`.
+
+---
+Task ID: 12 (CA-only saves + principal My Teaching dashboard)
+Agent: main (Z.ai Code)
+Task: Make CA-only result saves possible (exam added later) + add a "My Teaching" section to the principal dashboard.
+
+Work Log:
+- lib/results.ts: validateScore now requires CA (0-30) but allows exam to be null/optional (0-70 or null). computeTotal returns null when exam is missing (CA-only draft). gradeForTotal returns null when total is null.
+- /api/results POST + /api/results/[id] PUT/PATCH: exam optional/nullable in zod; total+grade null for CA-only drafts; recomputePositions already filters total:not-null (CA-only excluded from ranking). PATCH preserves null exam (was coercing to 0).
+- Teacher results-entry UI: empty exam → sends exam:null (was Number('')=0); CA required (throws 'CA is required' if empty). Teachers save CA first, come back, add exam, save again.
+- Principal dashboard: new "My Teaching" section (MyTeachingSection) that fetches /api/dashboard/teacher, shows her assigned classes (with Class Teacher badges) + subjects, + quick buttons (Enter Results / My Students / Report Cards). If not assigned, shows "Assign Myself" → Teacher Assignments (where she can assign herself to classes/subjects like any teacher).
+- Verified: bun run lint passes (0 errors); dev server 200. Pushed (5c89d1e).
+
+Stage Summary:
+- Teachers can now save CA-only (exam added later) — total/grade/position stay null until the exam is entered, then auto-compute. No more "must enter exam to save" hardcoding.
+- The principal's dashboard now surfaces her teacher role (classes she teaches, quick result-entry access) alongside the principal overview. She can assign herself to classes/subjects in Teacher Assignments (she appears in the teacher dropdown — done in Task 11).
+- The user needs to redeploy on Vercel to see these changes live.
