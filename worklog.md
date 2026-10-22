@@ -819,3 +819,20 @@ Stage Summary:
 - Every report card now shows the school logo (DB-baked + static fallback) — permanent, no more missing logo.
 - Senior-secondary streams are now first-class: the principal can create + label SS classes by Science/Art/Commercial, and the stream shows as a badge. Students belong to one stream-class; subjects + teachers are assigned per stream-class.
 - The user needs to redeploy on Vercel to see these changes live.
+
+---
+Task ID: 14 (report-card print: one page, no leaks)
+Agent: main (Z.ai Code)
+Task: Fix the printed/PDF report card — remove browser headers/footers + the leaked "Choose Save as PDF" toast + force one page only.
+
+Work Log:
+- globals.css print rules:
+  - @page { margin: 0 } — removes the browser's default print header/footer (the date + page title "10/22/26, 8:33 PM RESCO eCard | Login"). The report card provides its own internal padding (print:p-6).
+  - body * { visibility: hidden } then .print-area/.print-area * { visibility: visible } — hides the ENTIRE app (shell, buttons, selectors, toasts, devtools) and reveals ONLY the report card.
+  - Hard-hide sonner toasts + Next.js devtools + .no-print (display:none) so the "Choose 'Save as PDF' in the print dialog" toast hint can't leak onto the printout.
+  - Compacted the report card to ONE A4 page: print font-size 9.5pt, table 9pt with 2px row padding, h1 16pt, break-inside:avoid so the card doesn't split across pages.
+- report-card-document.tsx: logo h-16/w-16 (was h-20) + print:p-6 (was p-8) for a tighter one-page fit.
+- Verified: lint passes (0 errors); dev server 200. Pushed (7c3280f).
+
+Stage Summary:
+- The printed/downloaded report card now shows ONLY the report card (logo, school header, student info, subject table, remark, signatures, footer) on a single A4 page. No browser date/title header, no toast hints, no app-shell chrome, no second page. The user needs to redeploy on Vercel to see this live.
