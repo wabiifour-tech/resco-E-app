@@ -235,15 +235,23 @@ export async function GET(req: NextRequest) {
   })
   for (const r of allResultsForStudentInSession) subjectIdsSet.add(r.subjectId)
 
-  // Also include any subjects that the student's class has a teacher assignment
-  // for, so that subjects with no entered scores yet still appear (showing
-  // dashes).
+  // Also include ALL subjects OFFERED for the student's class (via ClassSubject)
+  // so the report card lists the full class curriculum — subjects with no
+  // entered scores yet still appear (showing dashes). This is independent of
+  // whether a teacher has been assigned to the subject yet.
   if (student.classId) {
-    const classAssignments = await db.teacherAssignment.findMany({
-      where: { classId: student.classId },
-      select: { subjectId: true },
-    })
+    const [classAssignments, classSubjects] = await Promise.all([
+      db.teacherAssignment.findMany({
+        where: { classId: student.classId },
+        select: { subjectId: true },
+      }),
+      db.classSubject.findMany({
+        where: { classId: student.classId },
+        select: { subjectId: true },
+      }),
+    ])
     for (const a of classAssignments) subjectIdsSet.add(a.subjectId)
+    for (const cs of classSubjects) subjectIdsSet.add(cs.subjectId)
   }
 
   // Fetch subject names + sort alphabetically
