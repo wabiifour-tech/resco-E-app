@@ -284,7 +284,7 @@ function CreateClassDialog({
   const [name, setName] = useState('')
   const [level, setLevel] = useState('0')
   const [category, setCategory] = useState<string>('Primary')
-  const [stream, setStream] = useState<string>('')
+  const [stream, setStream] = useState<string>('none')
 
   function submit() {
     const trimmed = name.trim()
@@ -297,7 +297,7 @@ function CreateClassDialog({
       name: trimmed,
       level: Number.isFinite(lvl) ? lvl : 0,
       category,
-      stream: stream || null,
+      stream: stream === 'none' ? null : stream,
     })
   }
 
@@ -309,7 +309,7 @@ function CreateClassDialog({
           setName('')
           setLevel('0')
           setCategory('Primary')
-          setStream('')
+          setStream('none')
         }
         onOpenChange(v)
       }}
@@ -381,7 +381,7 @@ function CreateClassDialog({
                   <SelectValue placeholder="No stream (general)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No stream (general)</SelectItem>
+                  <SelectItem value="none">No stream (general)</SelectItem>
                   {STREAMS.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
@@ -432,7 +432,7 @@ function EditClassDialogInner({
   const [name, setName] = useState(cls.name)
   const [level, setLevel] = useState(String(cls.level))
   const [category, setCategory] = useState<string>(cls.category ?? 'Primary')
-  const [stream, setStream] = useState<string>(cls.stream ?? '')
+  const [stream, setStream] = useState<string>(cls.stream ?? 'none')
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -440,7 +440,7 @@ function EditClassDialogInner({
         name: name.trim(),
         level: Number(level) || 0,
         category,
-        stream: stream || null,
+        stream: stream === 'none' ? null : stream,
       }),
     onSuccess: () => {
       toast.success('Class updated')
@@ -502,7 +502,7 @@ function EditClassDialogInner({
                   <SelectValue placeholder="No stream (general)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No stream (general)</SelectItem>
+                  <SelectItem value="none">No stream (general)</SelectItem>
                   {STREAMS.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}

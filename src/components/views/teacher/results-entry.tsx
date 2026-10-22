@@ -450,8 +450,10 @@ export function TeacherResultsEntry() {
     const draft = getDraft(row.studentId, row)
     const err = validateInput(draft.ca, draft.exam)
     if (err) return toast.error(err)
-    if (draft.ca === '' || draft.exam === '') {
-      return toast.error('Enter both CA and Examination scores')
+    // CA is required; exam is OPTIONAL (CA-only draft is allowed — the teacher
+    // can come back and add the exam later).
+    if (draft.ca === '') {
+      return toast.error('CA is required (0–30). Examination can be added later.')
     }
     saveMutation.mutate({
       row,
@@ -465,13 +467,13 @@ export function TeacherResultsEntry() {
     const editable = rowStates.filter((r) => r.status !== 'SUBMITTED' && r.status !== 'APPROVED')
     if (editable.length === 0) return toast.info('Nothing to save')
 
-    // Validate all
+    // Validate all — CA required, exam optional
     for (const r of editable) {
       const d = getDraft(r.studentId, r)
       const err = validateInput(d.ca, d.exam)
       if (err) return toast.error(`Row error: ${err}`)
-      if (d.ca === '' || d.exam === '') {
-        return toast.error('Enter both CA and Examination for every student')
+      if (d.ca === '') {
+        return toast.error('Enter CA for every student (examination is optional)')
       }
     }
     // Save one by one (awaitable)
