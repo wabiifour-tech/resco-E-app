@@ -51,6 +51,7 @@ type ClassRow = {
   name: string
   level: number
   category: string | null
+  stream: string | null
   studentCount: number
 }
 
@@ -58,7 +59,10 @@ type ClassInput = {
   name: string
   level: number
   category: string
+  stream: string | null
 }
+
+const STREAMS = ['Science', 'Art', 'Commercial'] as const
 
 const CATEGORY_ORDER = [
   'Early Years',
@@ -192,9 +196,16 @@ export function PrincipalClasses() {
                           <span className="font-semibold text-base">
                             {cls.name}
                           </span>
-                          <Badge variant="outline" className="text-[10px]">
-                            Level {cls.level}
-                          </Badge>
+                          <div className="flex items-center gap-1.5">
+                            {cls.stream ? (
+                              <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600 text-white">
+                                {cls.stream}
+                              </Badge>
+                            ) : null}
+                            <Badge variant="outline" className="text-[10px]">
+                              Level {cls.level}
+                            </Badge>
+                          </div>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className="text-[10px] gap-1">
@@ -273,6 +284,7 @@ function CreateClassDialog({
   const [name, setName] = useState('')
   const [level, setLevel] = useState('0')
   const [category, setCategory] = useState<string>('Primary')
+  const [stream, setStream] = useState<string>('')
 
   function submit() {
     const trimmed = name.trim()
@@ -285,6 +297,7 @@ function CreateClassDialog({
       name: trimmed,
       level: Number.isFinite(lvl) ? lvl : 0,
       category,
+      stream: stream || null,
     })
   }
 
@@ -296,6 +309,7 @@ function CreateClassDialog({
           setName('')
           setLevel('0')
           setCategory('Primary')
+          setStream('')
         }
         onOpenChange(v)
       }}
@@ -359,6 +373,27 @@ function CreateClassDialog({
               {CATEGORY_DESCRIPTIONS[category] ?? ''}
             </p>
           </div>
+          {category === 'Senior Secondary' && (
+            <div className="space-y-2">
+              <Label htmlFor="cls-stream">Stream</Label>
+              <Select value={stream} onValueChange={setStream}>
+                <SelectTrigger id="cls-stream" className="w-full">
+                  <SelectValue placeholder="No stream (general)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No stream (general)</SelectItem>
+                  {STREAMS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Create separate classes per stream, e.g. “SS 1 Science”, “SS 1 Art”, “SS 1 Commercial”.
+              </p>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -397,6 +432,7 @@ function EditClassDialogInner({
   const [name, setName] = useState(cls.name)
   const [level, setLevel] = useState(String(cls.level))
   const [category, setCategory] = useState<string>(cls.category ?? 'Primary')
+  const [stream, setStream] = useState<string>(cls.stream ?? '')
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -404,6 +440,7 @@ function EditClassDialogInner({
         name: name.trim(),
         level: Number(level) || 0,
         category,
+        stream: stream || null,
       }),
     onSuccess: () => {
       toast.success('Class updated')
@@ -457,6 +494,24 @@ function EditClassDialogInner({
               </SelectContent>
             </Select>
           </div>
+          {category === 'Senior Secondary' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-stream">Stream</Label>
+              <Select value={stream} onValueChange={setStream}>
+                <SelectTrigger id="edit-stream" className="w-full">
+                  <SelectValue placeholder="No stream (general)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No stream (general)</SelectItem>
+                  {STREAMS.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

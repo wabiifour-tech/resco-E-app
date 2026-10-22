@@ -44,11 +44,16 @@ model Teacher {
 // ─── Classes (flat — NO arms) ───────────────────────────────────────────────
 // category groups: Early Years, Nursery, Primary, Junior Secondary, Senior Secondary.
 // level orders the progression KG→Nursery1→...→SS3.
+// stream is for senior-secondary classes: Science | Art | Commercial (null for
+// other levels). The principal creates e.g. "SS 1 Science" (stream=Science),
+// "SS 1 Art" (stream=Art), "SS 1 Commercial" (stream=Commercial) so each stream
+// is a distinct class with its own students, subjects, and teachers.
 model Class {
   id         String              @id @default(cuid())
-  name       String              @unique // "JSS 1", "Primary 3", "KG", etc.
+  name       String              @unique // "JSS 1", "Primary 3", "SS 1 Science", etc.
   level      Int                 @default(0)
   category   String?             // Early Years | Nursery | Primary | Junior Secondary | Senior Secondary
+  stream     String?             // Science | Art | Commercial (senior secondary only; null otherwise)
   students   Student[]
   classTeachers ClassTeacher[]
   classSubjects ClassSubject[]

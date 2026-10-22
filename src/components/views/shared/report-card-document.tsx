@@ -3,7 +3,6 @@
 import { useQuery } from '@tanstack/react-query'
 import {
   Loader2,
-  School,
   AlertCircle,
 } from 'lucide-react'
 
@@ -203,18 +202,19 @@ function CardView({ data }: { data: ReportCardData }) {
         {/* ─── Header: logo (left) + name/motto/address (center/right) ────── */}
         <header className="flex items-center gap-4 border-b-2 border-black/70 pb-4">
           <div className="shrink-0">
-            {s.logoDataUrl ? (
-               
-              <img
-                src={s.logoDataUrl}
-                alt="School logo"
-                className="h-20 w-20 object-contain print:h-20 print:w-20"
-              />
-            ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded border border-black/40">
-                <School className="h-8 w-8 text-black/50" />
-              </div>
-            )}
+            {/* Always show the school logo. Fall back to the static
+                /school-logo.png asset (committed to the repo) when no
+                configured logoDataUrl — so the logo is permanent on every
+                report card, never a generic placeholder. */}
+            <img
+              src={s.logoDataUrl || '/school-logo.png'}
+              alt="School logo"
+              className="h-20 w-20 object-contain print:h-20 print:w-20 rounded-full bg-white"
+              onError={(e) => {
+                // Final fallback: hide a broken image so the layout stays clean.
+                ;(e.currentTarget as HTMLImageElement).style.visibility = 'hidden'
+              }}
+            />
           </div>
           <div className="flex-1 text-center">
             <h1 className="text-2xl font-bold uppercase tracking-tight text-black">

@@ -13,6 +13,7 @@ const editClassSchema = z.object({
     .enum(['Early Years', 'Nursery', 'Primary', 'Junior Secondary', 'Senior Secondary'])
     .optional()
     .nullable(),
+  stream: z.enum(['Science', 'Art', 'Commercial']).optional().nullable(),
 })
 
 type Params = { params: Promise<{ id: string }> }
@@ -34,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       name: cls.name,
       level: cls.level,
       category: cls.category ?? null,
+      stream: cls.stream ?? null,
       studentCount: cls._count.students,
       assignmentCount: cls._count.assignments,
       resultCount: cls._count.results,
@@ -58,7 +60,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const cls = await db.class.findUnique({ where: { id } })
   if (!cls) return Response.json({ error: 'Class not found' }, { status: 404 })
 
-  const data: { name?: string; level?: number; category?: string | null } = {}
+  const data: { name?: string; level?: number; category?: string | null; stream?: string | null } = {}
   if (parsed.data.name !== undefined) {
     const newName = parsed.data.name
     if (newName !== cls.name) {
@@ -71,6 +73,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
   }
   if (parsed.data.level !== undefined) data.level = parsed.data.level
   if (parsed.data.category !== undefined) data.category = parsed.data.category
+  if (parsed.data.stream !== undefined) data.stream = parsed.data.stream
 
   const updated = await db.class.update({
     where: { id },
@@ -85,7 +88,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     action: 'CLASS_EDITED',
     context: {
       classId: id,
-      before: { name: cls.name, level: cls.level, category: cls.category },
+      before: { name: cls.name, level: cls.level, category: cls.category, stream: cls.stream },
       after: data,
     },
   })
@@ -96,6 +99,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       name: updated.name,
       level: updated.level,
       category: updated.category ?? null,
+      stream: updated.stream ?? null,
       studentCount: updated._count.students,
     },
   })

@@ -15,6 +15,7 @@ const createSchema = z.object({
     .enum(['Early Years', 'Nursery', 'Primary', 'Junior Secondary', 'Senior Secondary'])
     .optional()
     .nullable(),
+  stream: z.enum(['Science', 'Art', 'Commercial']).optional().nullable(),
 })
 
 /**
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
     name: c.name,
     level: c.level,
     category: c.category ?? null,
+    stream: c.stream ?? null,
     studentCount: c._count.students,
   }))
 
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
       name,
       level: parsed.data.level ?? 0,
       category: parsed.data.category ?? null,
+      stream: parsed.data.stream ?? null,
     },
     include: { _count: { select: { students: true } } },
   })
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest) {
     userName: u.name,
     userRole: u.role,
     action: 'CLASS_CREATED',
-    context: { classId: cls.id, name, level: cls.level, category: cls.category },
+    context: { classId: cls.id, name, level: cls.level, category: cls.category, stream: cls.stream },
   })
 
   return Response.json(
@@ -104,6 +107,7 @@ export async function POST(req: NextRequest) {
         name: cls.name,
         level: cls.level,
         category: cls.category ?? null,
+        stream: cls.stream ?? null,
         studentCount: cls._count.students,
       },
     },
