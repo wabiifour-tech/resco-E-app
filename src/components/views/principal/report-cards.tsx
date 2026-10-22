@@ -613,7 +613,7 @@ function BulkPreview({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 rc-bulk-container">
       <div className="no-print">
         <Alert className="border-emerald-500/40 bg-emerald-500/5">
           <CheckCircle2 className="h-4 w-4" />

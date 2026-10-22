@@ -151,8 +151,8 @@
   .no-print {
     display: none !important;
   }
-  /* Show only the print area(s) — absolute-position to remove the app
-   * layout padding/margins so the report card fills the page. */
+  /* Show only the print area(s). For a SINGLE card, absolute-position to
+   * remove the app layout padding so the card fills the page. */
   .print-area {
     position: absolute;
     left: 0;
@@ -161,7 +161,25 @@
     margin: 0;
     padding: 0;
   }
-  /* In bulk mode, each student's card is on its own page */
+  /* In BULK mode, the container of all cards is absolute (starts at the top
+   * of the page, ignoring the hidden app shell), and each card inside flows
+   * naturally so the page breaks separate them. Without this, the cards'
+   * own .print-area absolute positioning stacked them all at top:0 and only
+   * the first card printed. */
+  .rc-bulk-container {
+    position: absolute !important;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  .rc-bulk-card .print-area {
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   .rc-bulk-card {
     break-after: page;
     page-break-after: always;
