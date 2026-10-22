@@ -836,3 +836,32 @@ Work Log:
 
 Stage Summary:
 - The printed/downloaded report card now shows ONLY the report card (logo, school header, student info, subject table, remark, signatures, footer) on a single A4 page. No browser date/title header, no toast hints, no app-shell chrome, no second page. The user needs to redeploy on Vercel to see this live.
+
+---
+Task ID: 15 (persist view across reloads)
+Agent: main (Z.ai Code)
+Task: Make every browser reload fall back to the same page the user was on (not reset to the dashboard).
+
+Work Log:
+- src/store/app-store.ts: wrapped useAppStore with Zustand's persist middleware.
+  - name: 'resco-ecard-view' (localStorage key).
+  - partialize: state => ({ view: state.view }) — ONLY the active view is
+    persisted (never the session user for security; loadingAuth always starts
+    true until /api/auth/me resolves).
+  - On reload: the store rehydrates the view from localStorage synchronously;
+    AppShell still shows the loading splash (loadingAuth=true) until
+    /api/auth/me resolves, then renders the shell with the restored view.
+    No hydration mismatch (server + client both render the loading splash
+    initially; the persisted view only affects the post-auth render).
+  - If the persisted view isn't valid for the current user's role (e.g. a
+    teacher with a stale principal-only view), the shell's
+    views[view] ?? views.dashboard falls back to the dashboard safely.
+  - Logout resets the view to 'dashboard' (so the next user starts fresh).
+- Verified: lint passes (0 errors); dev server 200; SSR renders the loading
+  splash correctly (no persist-induced crash). Pushed (9369367).
+
+Stage Summary:
+- A browser reload now restores the same page the user was viewing (e.g.
+  reload on the Teachers page → stays on Teachers, not the dashboard). The
+  session is still restored via /api/auth/me (the cookie); only the view
+  state is persisted to localStorage. The user needs to redeploy on Vercel.
