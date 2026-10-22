@@ -225,7 +225,8 @@ type SaveBody = {
   termId: string
   classId: string
   ca: number
-  exam: number
+  // Exam is optional — CA can be saved first, exam added later (CA-only draft).
+  exam: number | null
   remarkId: string | null
 }
 
@@ -384,8 +385,13 @@ export function TeacherResultsEntry() {
       if (!selectedAssignment || !activeSession || !activeTerm) {
         throw new Error('Missing assignment, session, or term')
       }
+      // CA is required (0–30). Exam is OPTIONAL — empty exam → null (CA-only
+      // draft the teacher can come back to and add the exam later).
+      if (vars.ca === '' || Number.isNaN(Number(vars.ca))) {
+        throw new Error('CA is required (0–30)')
+      }
       const ca = Number(vars.ca)
-      const exam = Number(vars.exam)
+      const exam = vars.exam === '' || vars.exam == null ? null : Number(vars.exam)
       const body: SaveBody = {
         studentId: vars.row.studentId,
         subjectId: selectedAssignment.subjectId,

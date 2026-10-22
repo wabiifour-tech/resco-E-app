@@ -175,7 +175,13 @@ export async function GET(
 
 const putSchema = z.object({
   ca: z.number({ invalid_type_error: 'CA must be a number' }).min(0).max(CA_MAX),
-  exam: z.number({ invalid_type_error: 'Examination must be a number' }).min(0).max(EXAM_MAX),
+  // Exam is OPTIONAL — CA can be saved first, exam added later.
+  exam: z
+    .number({ invalid_type_error: 'Examination must be a number' })
+    .min(0)
+    .max(EXAM_MAX)
+    .nullable()
+    .optional(),
   remarkId: z.string().nullable().optional(),
 })
 
@@ -349,9 +355,11 @@ export async function PATCH(
   }
   const { ca, exam, remarkId } = parsed.data
 
-  // Merge with existing values to recompute total/grade
-  const newCa = ca ?? existing.ca ?? 0
-  const newExam = exam ?? existing.exam ?? 0
+  // Merge with existing values to recompute total/grade.
+  // NOTE: exam may legitimately be null (CA-only draft) — preserve null,
+  // don't coerce to 0.
+  const newCa = ca !== undefined ? ca : existing.ca ?? 0
+  const newExam = exam !== undefined ? exam : existing.exam
   // Only validate if either score was provided
   if (ca !== undefined || exam !== undefined) {
     const scoreErr = validateScore(newCa, newExam)

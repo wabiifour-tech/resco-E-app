@@ -275,7 +275,13 @@ const saveSchema = z.object({
   termId: z.string().min(1, 'Term is required'),
   classId: z.string().min(1, 'Class is required'),
   ca: z.number({ invalid_type_error: 'CA must be a number' }).min(0).max(CA_MAX),
-  exam: z.number({ invalid_type_error: 'Examination must be a number' }).min(0).max(EXAM_MAX),
+  // Exam is OPTIONAL — teachers often enter CA first, then add the exam later.
+  exam: z
+    .number({ invalid_type_error: 'Examination must be a number' })
+    .min(0)
+    .max(EXAM_MAX)
+    .nullable()
+    .optional(),
   remarkId: z.string().nullable().optional(),
 })
 

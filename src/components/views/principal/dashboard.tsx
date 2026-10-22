@@ -20,6 +20,8 @@ import {
   AlertCircle,
   Loader2,
   School,
+  ClipboardPen,
+  Users as UsersIcon,
 } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +30,102 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api-client'
 import { useAppStore } from '@/store/app-store'
+
+// ─── My Teaching section (principal is also a teacher) ───────────────────────
+
+function MyTeachingSection() {
+  const setView = useAppStore((s) => s.setView)
+  const { data, isLoading } = useQuery<TeacherDashboard>({
+    queryKey: ['dashboard', 'teacher'],
+    queryFn: () => api.get<TeacherDashboard>('/api/dashboard/teacher'),
+    staleTime: 30_000,
+  })
+
+  // Group assignments by class
+  const byClass = new Map<string, { className: string; isClassTeacher: boolean; subjects: string[] }>()
+  for (const a of data?.assignments ?? []) {
+    const existing = byClass.get(a.classId)
+    if (existing) {
+      existing.subjects.push(a.subjectName)
+    } else {
+      byClass.set(a.classId, {
+        className: a.className,
+        isClassTeacher: a.isClassTeacher,
+        subjects: [a.subjectName],
+      })
+    }
+  }
+  const classRows = Array.from(byClass.entries()).map(([id, v]) => ({ id, ...v }))
+  const hasAssignments = classRows.length > 0
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-muted-foreground flex items-center gap-1.5">
+          <ClipboardPen className="h-4 w-4" /> My Teaching
+        </h2>
+        <Badge variant="outline" className="font-normal">
+          {hasAssignments ? `${classRows.length} class${classRows.length === 1 ? '' : 'es'}` : 'Not assigned'}
+        </Badge>
+      </div>
+      <Card>
+        <CardContent className="p-4 space-y-4">
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-4 w-1/2" />
+            </div>
+          ) : hasAssignments ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                You teach the following classes/subjects this term. Record scores for your students directly.
+              </p>
+              <div className="space-y-2.5">
+                {classRows.map((c) => (
+                  <div key={c.id} className="rounded-md border p-3 bg-muted/30">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{c.className}</span>
+                      {c.isClassTeacher ? (
+                        <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600 text-white">Class Teacher</Badge>
+                      ) : null}
+                      <span className="text-[11px] text-muted-foreground ml-auto">{c.subjects.length} subject{c.subjects.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {c.subjects.map((s) => (
+                        <Badge key={s} variant="secondary" className="text-[10px] font-normal">{s}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button size="sm" onClick={() => setView('t-results-entry')}>
+                  <ClipboardPen className="h-4 w-4" /> Enter Results
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setView('t-my-students')}>
+                  <UsersIcon className="h-4 w-4" /> My Students
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setView('t-report-cards')}>
+                  <FileText className="h-4 w-4" /> Report Cards
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">
+                You&apos;re not assigned to teach any class/subject yet. Assign yourself to classes/subjects (just like other teachers) to start recording scores.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => setView('assignments')}>
+                <UsersIcon className="h-4 w-4" /> Assign Myself
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </section>
+  )
+}
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -53,6 +151,19 @@ type PrincipalDashboard = {
     needsCorrection: number
     total: number
   }
+}
+
+// The principal is also a teacher — this section mirrors the teacher dashboard
+// so she can record scores for the classes/subjects she teaches, straight from
+// her principal dashboard.
+type TeacherDashboard = {
+  teacher: { name: string; email: string }
+  current: { sessionName: string | null; termName: string | null }
+  assignments: { classId: string; className: string; subjectId: string; subjectName: string; isClassTeacher: boolean }[]
+  classes: { id: string; name: string; isClassTeacher: boolean }[]
+  subjects: { id: string; name: string }[]
+  classTeacherClasses: { id: string; name: string; level: number; category: string | null }[]
+  results: { saved: number; submitted: number; approved: number; needsCorrection: number }
 }
 
 // ─── Quick links ────────────────────────────────────────────────────────────
@@ -305,6 +416,9 @@ export function PrincipalDashboard() {
         </div>
         <ResultsStatusRow data={data} isLoading={isLoading} />
       </section>
+
+      {/* My Teaching — the principal is also a teacher */}
+      <MyTeachingSection />
 
       {/* Quick links */}
       <section className="space-y-3">

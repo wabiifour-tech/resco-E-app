@@ -10,16 +10,21 @@ export const CA_MAX = 30
 export const EXAM_MAX = 70
 export const TOTAL_MAX = 100
 
-/** Validate a single CA/Exam entry. Returns error string or null. */
-export function validateScore(ca: number, exam: number): string | null {
-  if (!Number.isFinite(ca) || !Number.isFinite(exam)) return 'Scores must be valid numbers'
+/** Validate a CA/Exam entry. CA is required (0–30). Exam is OPTIONAL (0–70 or
+ * null) — teachers often enter CA first, then come back to add the exam score
+ * later. Returns error string or null. */
+export function validateScore(ca: number, exam: number | null | undefined): string | null {
+  if (!Number.isFinite(ca)) return 'CA must be a valid number'
   if (ca < 0 || ca > CA_MAX) return `CA must be between 0 and ${CA_MAX}`
-  if (exam < 0 || exam > EXAM_MAX) return `Examination must be between 0 and ${EXAM_MAX}`
+  if (exam != null && !Number.isFinite(exam)) return 'Examination must be a valid number'
+  if (exam != null && (exam < 0 || exam > EXAM_MAX)) return `Examination must be between 0 and ${EXAM_MAX}`
   return null
 }
 
-/** Compute term total. */
-export function computeTotal(ca: number, exam: number): number {
+/** Compute term total. Returns null when the exam score is not yet entered
+ * (CA-only draft — the result is "incomplete" until the exam is added). */
+export function computeTotal(ca: number, exam: number | null | undefined): number | null {
+  if (exam == null || !Number.isFinite(exam)) return null
   return ca + exam
 }
 
@@ -32,7 +37,8 @@ export function round2(n: number): number {
  * Look up the grade for a given total using configured GradeBoundary rows.
  * Falls back to default scale if none configured.
  */
-export function gradeForTotal(total: number, boundaries?: { min: number; max: number; grade: string }[]): string {
+export function gradeForTotal(total: number | null, boundaries?: { min: number; max: number; grade: string }[]): string | null {
+  if (total == null || !Number.isFinite(total)) return null
   const b = boundaries && boundaries.length > 0 ? boundaries : DEFAULT_GRADE_BOUNDARIES
   for (const row of b) {
     if (total >= row.min && total <= row.max) return row.grade
