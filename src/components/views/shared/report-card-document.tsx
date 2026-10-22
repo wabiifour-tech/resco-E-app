@@ -11,6 +11,43 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { api, ApiError } from '@/lib/api-client'
 
+// ─── Principal's official stamp (circular seal) ───────────────────────────────
+// Rendered as an inline SVG so it's crisp in print + needs no image upload.
+function PrincipalStamp() {
+  return (
+    <svg
+      viewBox="0 0 120 120"
+      className="h-16 w-16 print:h-16 print:w-16"
+      role="img"
+      aria-label="Principal official stamp"
+    >
+      <defs>
+        <path id="stamp-top" d="M 18 60 A 42 42 0 0 1 102 60" fill="none" />
+        <path id="stamp-bottom" d="M 102 60 A 42 42 0 0 1 18 60" fill="none" />
+      </defs>
+      <circle cx="60" cy="60" r="56" fill="none" stroke="#1f4d2b" strokeWidth="2.5" />
+      <circle cx="60" cy="60" r="48" fill="none" stroke="#1f4d2b" strokeWidth="1.2" />
+      <text fill="#1f4d2b" fontSize="9" fontWeight="bold" letterSpacing="0.5">
+        <textPath href="#stamp-top" startOffset="50%" textAnchor="middle">
+          REDEEMER&apos;S SCHOOLS &amp; COLLEGE
+        </textPath>
+      </text>
+      <text fill="#1f4d2b" fontSize="7" letterSpacing="0.5">
+        <textPath href="#stamp-bottom" startOffset="50%" textAnchor="middle">
+          OWOTORO • OYO STATE
+        </textPath>
+      </text>
+      <text x="60" y="52" textAnchor="middle" fill="#1f4d2b" fontSize="9" fontWeight="bold">
+        PRINCIPAL
+      </text>
+      <text x="60" y="66" textAnchor="middle" fill="#1f4d2b" fontSize="6">
+        APPROVED
+      </text>
+      <path d="M 44 70 L 54 78 L 76 56" fill="none" stroke="#1f4d2b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TermResult = {
@@ -432,31 +469,50 @@ function CardView({ data }: { data: ReportCardData }) {
         </section>
 
         {/* ─── Signatures + date ─────────────────────────────────────────── */}
-        <section className="mt-6 grid grid-cols-2 gap-6 print:grid-cols-2">
+        <section className="mt-4 grid grid-cols-2 gap-4 print:grid-cols-2">
           <div className="flex flex-col items-center">
-            <div className="mb-1 h-10" />
+            <div className="mb-1 h-8" />
             <div className="w-full border-t border-black" />
-            <p className="mt-1 text-center text-xs text-black">
+            <p className="mt-1 text-center text-[10px] text-black">
               Class Teacher&apos;s Signature
             </p>
           </div>
           <div className="flex flex-col items-center">
-            <div className="mb-1 flex h-10 items-end justify-center">
+            {/* Principal's signature + official stamp side by side */}
+            <div className="mb-1 flex h-12 items-end justify-center gap-2">
               {s.principalSignatureDataUrl ? (
-                 
                 <img
                   src={s.principalSignatureDataUrl}
                   alt="Principal signature"
-                  className="h-10 max-w-[200px] object-contain"
+                  className="h-10 max-w-[160px] object-contain"
                 />
-              ) : null}
+              ) : (
+                // Cursive signature rendered from the principal's name (no
+                // image upload needed) — uses a common script font stack.
+                <span
+                  className="text-lg leading-none text-black"
+                  style={{
+                    fontFamily:
+                      "'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive",
+                    fontStyle: 'italic',
+                    transform: 'rotate(-4deg)',
+                    display: 'inline-block',
+                  }}
+                >
+                  {s.principalName || 'The Principal'}
+                </span>
+              )}
+              {/* Official circular stamp (SVG seal) */}
+              <div className="opacity-90" style={{ transform: 'rotate(-8deg)' }}>
+                <PrincipalStamp />
+              </div>
             </div>
             <div className="w-full border-t border-black" />
-            <p className="mt-1 text-center text-xs text-black">
-              {s.principalName ? `${s.principalName}` : 'Principal'}
+            <p className="mt-1 text-center text-[10px] font-semibold text-black">
+              {s.principalName || 'The Principal'}
             </p>
-            <p className="text-center text-xs text-black/70">
-              Principal&apos;s Signature
+            <p className="text-center text-[10px] text-black/70">
+              Principal&apos;s Signature &amp; Stamp
             </p>
           </div>
         </section>
