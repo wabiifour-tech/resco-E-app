@@ -801,3 +801,21 @@ Stage Summary:
 - Teachers can now save CA-only (exam added later) — total/grade/position stay null until the exam is entered, then auto-compute. No more "must enter exam to save" hardcoding.
 - The principal's dashboard now surfaces her teacher role (classes she teaches, quick result-entry access) alongside the principal overview. She can assign herself to classes/subjects in Teacher Assignments (she appears in the teacher dropdown — done in Task 11).
 - The user needs to redeploy on Vercel to see these changes live.
+
+---
+Task ID: 13 (permanent report-card logo + SS stream separation)
+Agent: main (Z.ai Code)
+Task: Make the school logo permanent on every report card + enable separating senior-secondary classes by stream (Science/Art/Commercial).
+
+Work Log:
+- Logo permanent: report-card-document.tsx now always renders <img src={logoDataUrl || '/school-logo.png'> (never a generic placeholder icon). Baked the school logo (base64, 118KB PNG) into the Turso SchoolSetting.logoDataUrl so it's stored in the DB (not just the static fallback). Removed the now-unused School import.
+- Stream separation: added nullable 'stream' column to Class (Science | Art | Commercial; null for non-SS). Applied to local SQLite (db:push) + Turso (ALTER TABLE Class ADD COLUMN stream TEXT via libsql). Regenerated Prisma client.
+- /api/classes GET/POST + /api/classes/[id] GET/PUT: accept + return stream.
+- Class Management UI (principal/classes.tsx): stream dropdown (Science/Art/Commercial/No stream) shown only when category=Senior Secondary, in both create + edit dialogs; green stream badge on the class card next to the Level badge.
+- The principal creates distinct classes per stream: "SS 1 Science" (stream=Science), "SS 1 Art" (stream=Art), "SS 1 Commercial" (stream=Commercial) — each a separate class with its own students, subjects (via ClassSubject), and teachers (via TeacherAssignment). Keeps the flat (no-arms) structure; the stream field enables grouping for SS.
+- Verified: lint passes (0 errors); dev server 200. Pushed (53fb605).
+
+Stage Summary:
+- Every report card now shows the school logo (DB-baked + static fallback) — permanent, no more missing logo.
+- Senior-secondary streams are now first-class: the principal can create + label SS classes by Science/Art/Commercial, and the stream shows as a badge. Students belong to one stream-class; subjects + teachers are assigned per stream-class.
+- The user needs to redeploy on Vercel to see these changes live.
