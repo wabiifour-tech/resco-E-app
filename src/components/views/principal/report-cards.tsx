@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  Loader2,
   Printer,
   FileDown,
   Info,
@@ -188,6 +189,13 @@ export function PrincipalReportCards() {
   // Bulk mode
   const [bulkMode, setBulkMode] = useState(false)
   const [bulkList, setBulkList] = useState<BulkStudent[]>([])
+  // Preloaded report-card data keyed by studentId — populated by the
+  // one-click "Download All" so BulkPreview renders immediately (no
+  // per-student queries) + print can fire right after.
+  const [preloadedBulkCards, setPreloadedBulkCards] = useState<
+    Record<string, unknown>
+  >({})
+  const [bulkLoading, setBulkLoading] = useState(false)
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -234,6 +242,7 @@ export function PrincipalReportCards() {
         toast.success(`Loaded ${list.length} student(s) for bulk print`)
       }
       setBulkList(list)
+      setPreloadedBulkCards({})
       setBulkMode(true)
     } catch (e) {
       const msg =
@@ -243,6 +252,60 @@ export function PrincipalReportCards() {
             ? e.message
             : 'Failed to load bulk list'
       toast.error(msg)
+    }
+  }
+
+  // One-click bulk download: fetch every student's report card in parallel,
+  // render them all stacked (each on its own page), then trigger the browser
+  // print dialog → "Save as PDF" produces a single PDF with every card.
+  const handleBulkDownload = async () => {
+    if (!sessionId || !termId || classId === 'all') {
+      toast.error('Pick a session, term, and class first')
+      return
+    }
+    setBulkLoading(true)
+    try {
+      const list = await fetchBulkList({ classId, sessionId, termId })
+      if (list.length === 0) {
+        toast.info('No active students in this class')
+        setBulkLoading(false)
+        return
+      }
+      toast.info(`Loading ${list.length} report card(s)…`)
+      // Fetch all cards in parallel.
+      const entries = await Promise.all(
+        list.map(async (s) => {
+          try {
+            const data = await api.get<any>('/api/report-card', {
+              query: { studentId: s.studentId, sessionId, termId },
+            })
+            return [s.studentId, data] as const
+          } catch {
+            return [s.studentId, null] as const
+          }
+        }),
+      )
+      const map: Record<string, unknown> = {}
+      for (const [id, data] of entries) {
+        if (data) map[id as string] = data
+      }
+      setBulkList(list)
+      setPreloadedBulkCards(map)
+      setStudentId(null)
+      setBulkMode(true)
+      toast.success(`Loaded ${list.length} report card(s) — opening print dialog…`)
+      // Let React render the stacked cards, then open the print dialog.
+      setTimeout(() => window.print(), 900)
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Failed to load report cards'
+      toast.error(msg)
+    } finally {
+      setBulkLoading(false)
     }
   }
 
@@ -338,12 +401,25 @@ export function PrincipalReportCards() {
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <Button
               type="button"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={handleBulkDownload}
+              disabled={!sessionId || !termId || classId === 'all' || bulkLoading}
+            >
+              {bulkLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <FileDown className="mr-2 h-4 w-4" />
+              )}
+              {bulkLoading ? 'Loading report cards…' : 'Download all report cards (PDF)'}
+            </Button>
+            <Button
+              type="button"
               variant="outline"
               onClick={handleLoadBulk}
-              disabled={!sessionId || !termId || classId === 'all'}
+              disabled={!sessionId || !termId || classId === 'all' || bulkLoading}
             >
               <Users className="mr-2 h-4 w-4" />
-              Load all students in class (bulk print)
+              Preview all (on screen)
             </Button>
             {bulkMode ? (
               <Button type="button" variant="ghost" onClick={handleExitBulk}>
@@ -392,6 +468,7 @@ export function PrincipalReportCards() {
           students={bulkList}
           sessionId={sessionId}
           termId={termId}
+          preloadedCards={preloadedBulkCards}
         />
       ) : (
         <>
@@ -498,22 +575,29 @@ function BulkPreview({
   students,
   sessionId,
   termId,
+  preloadedCards,
 }: {
   students: BulkStudent[]
   sessionId: string
   termId: string
+  preloadedCards?: Record<string, unknown>
 }) {
-  // Fetch all report cards in parallel (one query per student)
+  // If the caller pre-fetched all cards (one-click Download All), render from
+  // the preloaded map immediately (no per-student queries). Otherwise fall
+  // back to fetching each card in parallel.
+  const hasPreloaded = preloadedCards && Object.keys(preloadedCards).length > 0
   const queries = useQueries({
-    queries: students.map((s) => ({
-      queryKey: ['report-card', s.studentId, sessionId, termId],
-      queryFn: () =>
-        api.get<any>('/api/report-card', {
-          query: { studentId: s.studentId, sessionId, termId },
-        }),
-      enabled: !!sessionId && !!termId && !!s.studentId,
-      refetchOnWindowFocus: false,
-    })),
+    queries: hasPreloaded
+      ? []
+      : students.map((s) => ({
+          queryKey: ['report-card', s.studentId, sessionId, termId],
+          queryFn: () =>
+            api.get<any>('/api/report-card', {
+              query: { studentId: s.studentId, sessionId, termId },
+            }),
+          enabled: !!sessionId && !!termId && !!s.studentId,
+          refetchOnWindowFocus: false,
+        })),
   })
 
   if (students.length === 0) {
@@ -542,14 +626,32 @@ function BulkPreview({
       </div>
 
       {students.map((s, i) => {
-        const q = queries[i]
+        const preloaded = hasPreloaded
+          ? (preloadedCards![s.studentId] as any | undefined)
+          : undefined
+        const q = hasPreloaded ? undefined : queries[i]
         return (
           <div
             key={s.studentId}
             className="rc-bulk-card"
             style={{ breakAfter: 'page' }}
           >
-            {q?.isLoading ? (
+            {hasPreloaded ? (
+              preloaded ? (
+                <ReportCardDocument
+                  studentId={s.studentId}
+                  sessionId={sessionId}
+                  termId={termId}
+                  preloaded={preloaded}
+                />
+              ) : (
+                <Alert variant="destructive" className="no-print">
+                  <AlertDescription>
+                    Failed to load card for {s.fullName} ({s.admissionNumber})
+                  </AlertDescription>
+                </Alert>
+              )
+            ) : q?.isLoading ? (
               <Card>
                 <CardContent className="p-6 space-y-3">
                   <Skeleton className="h-20 w-20 rounded" />
