@@ -1,27 +1,50 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePrincipal } from '@/lib/auth'
+import { getSession } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 // RESCO eCard — Bulk report card (FLAT structure, NO class arms).
 // GET /api/report-card/bulk?classId=&sessionId=&termId=
 //
-// Principal only. Returns the list of active students in a class for
-// which a report card should be generated. The frontend fetches the full
-// report-card payload for each student via `/api/report-card?studentId=...`
-// and renders stacked `ReportCardDocument`s for printing.
+// Principal OR a teacher assigned to the class. Returns the list of active
+// students in a class for which a report card should be generated. The
+// frontend fetches the full report-card payload for each student via
+// `/api/report-card?studentId=...` and renders stacked ReportCardDocuments
+// for printing (one per page).
 //
 // Returns: { class: {id, name}, session, term, students: [{ studentId, fullName, admissionNumber }] }
 
 export async function GET(req: NextRequest) {
-  const u = await requirePrincipal()
-  if (!u) return Response.json({ error: 'Principal access required' }, { status: 403 })
+  const u = await getSession()
+  if (!u) return Response.json({ error: 'Authentication required' }, { status: 401 })
 
   const url = new URL(req.url)
   const classId = url.searchParams.get('classId')
   const sessionId = url.searchParams.get('sessionId')
   const termId = url.searchParams.get('termId')
+
+  if (!classId || !sessionId || !termId) {
+    return Response.json(
+      { error: 'classId, sessionId, and termId are required' },
+      { status: 400 },
+    )
+  }
+
+  // Authorization: principal passes; a teacher must have at least one
+  // assignment in this class (so they can only bulk-download their own
+  // assigned classes, not any class).
+  if (u.role === 'TEACHER' && u.teacherId) {
+    const assignment = await db.teacherAssignment.findFirst({
+      where: { teacherId: u.teacherId, classId },
+      select: { id: true },
+    })
+    if (!assignment) {
+      return Response.json({ error: 'You are not assigned to this class' }, { status: 403 })
+    }
+  } else if (u.role !== 'PRINCIPAL') {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   if (!classId || !sessionId || !termId) {
     return Response.json(

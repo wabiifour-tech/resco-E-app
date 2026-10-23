@@ -865,3 +865,48 @@ Stage Summary:
   reload on the Teachers page → stays on Teachers, not the dashboard). The
   session is still restored via /api/auth/me (the cookie); only the view
   state is persisted to localStorage. The user needs to redeploy on Vercel.
+
+---
+Task ID: 16
+Agent: full-stack-developer
+Task: Port the principal's bulk "Download all report cards (PDF)" flow to the TEACHER's Report Cards view (one-click → fetch the class's active students → fetch every card in parallel → render stacked, each on its own A4 page → auto-open print dialog → "Save as PDF" → single PDF with every student's card).
+
+Work Log:
+- READ `/home/z/my-project/worklog.md` (Tasks 1–15) + `src/components/views/principal/report-cards.tsx` (existing bulk flow: `handleBulkDownload`, `handleLoadBulk`, local `BulkPreview`, state `bulkMode`/`bulkList`/`preloadedBulkCards`/`bulkLoading`, the green emerald button, `rc-bulk-container`/`rc-bulk-card` classes, `break-after: page`) + `src/components/views/teacher/report-cards.tsx` (only single-student print/download before this task) + `src/app/api/report-card/bulk/route.ts` (already authorizes a teacher assigned to the class — `findFirst({ teacherId, classId })` returns the assignment → 200; else 403) + `src/components/views/shared/report-card-document.tsx` (accepts a `preloaded` prop → skips its own useQuery).
+- CREATED `src/components/views/shared/bulk-preview.tsx` — the shared `BulkPreview` component, extracted verbatim from the principal's local copy:
+  • Exports `type BulkStudent = { studentId: string; admissionNumber: string; fullName: string }` and `function BulkPreview({ students, sessionId, termId, preloadedCards })`.
+  • Two load paths: (1) caller passes a non-empty `preloadedCards` map (one-click Download All) → renders from the map immediately, NO per-student queries; (2) caller passes an empty/absent map → falls back to `useQueries` fetching each card in parallel via `/api/report-card?studentId=&sessionId=&termId=`.
+  • Renders a `.rc-bulk-container` div with stacked `.rc-bulk-card` divs (each `style={{ breakAfter: 'page' }}`) — one card per A4 page when printed.
+  • Per-card states: preloaded hit → `<ReportCardDocument preloaded={...}/>`; preloaded miss → destructive Alert; fallback loading → Card+Skeleton; fallback error → destructive Alert; fallback data → `<ReportCardDocument preloaded={q.data}/>`.
+  • Empty-students edge case → friendly "No active students" Alert.
+  • Imports: `useQueries` from `@tanstack/react-query`; `Info`, `CheckCircle2` from lucide-react; `Card`/`CardContent`/`Skeleton`/`Alert`/`AlertDescription`/`AlertTitle` from shadcn; `api` from `@/lib/api-client`; `ReportCardDocument` from `@/components/views/shared/report-card-document`.
+- UPDATED `src/components/views/principal/report-cards.tsx` — NO behavior change, pure refactor:
+  • Imported `BulkPreview` + `type BulkStudent` from the new shared component.
+  • Removed the local `BulkStudent` type definition + the entire local `BulkPreview` function (lines 573–681 of the original file).
+  • Removed the now-unused `useQueries` import (only `useQuery` remains — `useQueries` was only used by the deleted local `BulkPreview`).
+  • `handleBulkDownload`, `handleLoadBulk`, `handleExitBulk`, the green emerald button, "Preview all (on screen)" button, "Exit bulk mode" button, the bulk-state vars, and the `<BulkPreview ...preloadedCards={preloadedBulkCards}/>` usage are ALL unchanged. The principal's bulk flow still works identically (the shared component is a verbatim copy of the local one).
+- UPDATED `src/components/views/teacher/report-cards.tsx` — added the bulk flow as an ADDITION (single-student flow preserved):
+  • Imports: added `Loader2`, `Users` (later removed — unused), `ApiError` from `@/lib/api-client`, `BulkPreview` + `type BulkStudent` from the shared component.
+  • State: `bulkMode` (bool), `bulkList` (BulkStudent[]), `preloadedBulkCards` (Record<string, unknown>), `bulkLoading` (bool).
+  • `fetchBulkList` helper — same as the principal's, calls `/api/report-card/bulk?classId=&sessionId=&termId=` and returns `r.students`. (The endpoint authorizes the teacher for their assigned classes — already done in the prior task; the teacher's class dropdown is built from `bootQuery.data.assignments`, so only authorized classes appear.)
+  • `handleBulkDownload` — mirrors the principal's logic: validate `classId` + active session + term → fetch bulk list → short-circuit on empty → `toast.info("Loading N report card(s)…")` → `Promise.all` over the list, each fetching `/api/report-card?studentId=&sessionId=&termId=` with try/catch returning `[id, null]` on failure → build the preloaded map → `setBulkList + setPreloadedBulkCards + setStudentId('') + setBulkMode(true)` → `toast.success("Loaded N report card(s) — opening print dialog…")` → `setTimeout(() => window.print(), 900)` (lets React render the stacked cards before the print dialog opens). Uses `activeSession.id`/`activeTerm.id` from the bootstrap response. Errors caught via `ApiError`-aware catch → `toast.error`. `finally { setBulkLoading(false) }`.
+  • `handleExitBulk` — `setBulkMode(false) + setBulkList([]) + setPreloadedBulkCards({})`.
+  • `handlePrint`/`handleDownloadPdf` — updated to allow either `studentId` OR `bulkMode` (mirror the principal's); both still check `activeSession`/`activeTerm`.
+  • Green emerald "Download all report cards (PDF)" button added inside the student-picker Card (below the class Select, above the student list) — same styling as the principal's (`bg-emerald-600 hover:bg-emerald-700 text-white`, `FileDown` icon, `Loader2` spinner + "Loading report cards…" label when loading). Disabled when no class selected or no active session/term or while loading.
+  • "Exit bulk mode" ghost button appears next to the green button when `bulkMode` is true.
+  • Student picker table is hidden when `bulkMode` is true (replaced by the stacked BulkPreview).
+  • Bottom section: `{bulkMode ? <BulkPreview students={bulkList} sessionId={activeSession.id} termId={activeTerm.id} preloadedCards={preloadedBulkCards}/> : studentId && activeSession && activeTerm ? <ReportCardDocument .../> : null}` — bulk preview takes precedence; single-student preview unchanged when not in bulk mode.
+  • The single-student flow (select class → select student → preview → print/download) is 100% preserved.
+- Verified:
+  • `bun run lint` → EXIT 0 (0 errors, 0 warnings) after all edits. No unused imports (`Users` was removed once detected as unused; `useQueries` removed from the principal).
+  • Dev server log (tail) shows clean recompilations (`✓ Compiled in 266ms`, `✓ Compiled in 168ms`, `✓ Compiled in 148ms`) after the edits — no runtime errors. The only warning is the pre-existing `themeColor` metadata warning, unrelated to this task.
+
+Stage Summary:
+- The teacher's Report Cards view now has the prominent green "Download all report cards (PDF)" button — same one-click flow as the principal's: pick a class (from your assigned classes) → click → fetch the active student list + every report card in parallel → render them stacked (each card on its own A4 page) → auto-open the print dialog → "Save as PDF" produces a single PDF with every student's card. The button only enables for classes the teacher is assigned to (the dropdown is built from `bootQuery.data.assignments`; the bulk endpoint double-checks via `findFirst({ teacherId, classId })` → 403 otherwise). The principal's bulk flow is UNCHANGED (the extraction to the shared `BulkPreview` is a verbatim move — same logic, same classes, same behavior).
+- The single-student teacher flow is preserved end-to-end (select class → select student → preview → print/download).
+- New file: `src/components/views/shared/bulk-preview.tsx`.
+- Modified: `src/components/views/principal/report-cards.tsx` (use shared BulkPreview, drop local copy), `src/components/views/teacher/report-cards.tsx` (added bulk state + handleBulkDownload + green button + Exit bulk mode + shared BulkPreview).
+- Schema NOT modified. No `db:push`. `/api/report-card/bulk` + `/api/report-card` NOT modified (the bulk endpoint already authorized teachers in a prior task).
+
+Deviations:
+- I did NOT add a "Preview all (on screen)" button to the teacher view (the principal has one alongside the green Download button). The task only asked for the green "Download all report cards (PDF)" button + the bulk flow on the teacher side. Adding the on-screen preview is trivial (one button + reuse the same `BulkPreview` with an empty `preloadedCards`) but was out of scope; the green Download button already gives the teacher everything they need. The shared `BulkPreview`'s fallback path (per-student `useQueries`) still works if a future task wants to wire it up.
